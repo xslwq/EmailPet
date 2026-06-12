@@ -100,6 +100,18 @@ def wait_intent_node(state: AgentState) -> dict[str, Any]:
     return {}
 
 
+def wait_decision_node(state: AgentState) -> dict[str, Any]:
+    """Pass-through node that lives at the second interrupt point.
+
+    Sits after draft_reply. The graph is compiled with
+    interrupt_before=["wait_intent", "wait_decision"], so when the runtime
+    reaches this node, it pauses. After the user's draft_decision is
+    supplied via update_state, this node runs and the graph routes based
+    on draft_decision (approve | modify | reject).
+    """
+    return {}
+
+
 async def draft_reply_node(
     state: AgentState,
     llm: LLMClient,
