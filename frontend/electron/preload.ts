@@ -1,2 +1,7 @@
-// Preload script. Will expose IPC bridge in Task 3-1 and Task 3-6.
-export {}
+import { contextBridge, ipcRenderer } from 'electron'
+
+contextBridge.exposeInMainWorld('electronAPI', {
+  dragStart: (x: number, y: number) => ipcRenderer.send('drag-start', { x, y }),
+  dragMove: (x: number, y: number) => ipcRenderer.send('drag-move', { x, y }),
+  dragEnd: () => ipcRenderer.send('drag-end'),
+})
