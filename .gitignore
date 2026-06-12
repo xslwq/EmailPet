@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+out/
+.next/
+.parcel-cache/
+
+# EmailPet
+backend/config.yaml
+backend/emailpet/storage/*.db
+
+# Docs (本地详细说明文档，不入仓库)
+docs/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.log
