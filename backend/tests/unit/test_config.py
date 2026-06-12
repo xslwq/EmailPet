@@ -97,3 +97,19 @@ def test_load_config_default_server(tmp_path):
     cfg = Config.from_yaml(p)
     assert cfg.server.ws_host == "127.0.0.1"
     assert cfg.server.ws_port == 8765
+
+
+def test_load_config_root_not_dict(tmp_path):
+    """YAML root that is not a mapping (e.g. a bare string) → ValueError."""
+    p = tmp_path / "config.yaml"
+    p.write_text("just a string\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="must be a mapping"):
+        Config.from_yaml(p)
+
+
+def test_load_config_nested_not_dict(tmp_path):
+    """A nested section that should be a mapping but is a scalar → ValueError with field path."""
+    p = tmp_path / "config.yaml"
+    p.write_text("mail:\n  imap: oops\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="mail.imap"):
+        Config.from_yaml(p)

@@ -57,33 +57,61 @@ class Config:
             data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError as e:
             raise ValueError(f"Invalid YAML in {p}: {e}") from e
+        if not isinstance(data, dict):
+            raise ValueError(
+                f"Invalid config in {p}: root must be a mapping, got {type(data).__name__}"
+            )
         return cls._from_dict(data)
 
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> "Config":
-        _require(data, "mail")
-        mail = data["mail"]
-        _require(mail, "imap", path="mail")
-        _require(mail, "smtp", path="mail")
-        imap = _build_mail(mail["imap"], "imap")
-        smtp = _build_mail(mail["smtp"], "smtp")
-        _require(data, "llm")
-        llm = _build_llm(data["llm"])
-        server_data = data.get("server", {})
-        server = ServerConfig(
-            ws_host=server_data.get("ws_host", "127.0.0.1"),
-            ws_port=_validate_port(server_data.get("ws_port", 8765), "server.ws_port"),
-        )
-        poll_interval = mail.get("poll_interval_seconds", 30)
-        if not isinstance(poll_interval, int) or poll_interval <= 0:
-            raise ValueError("mail.poll_interval_seconds must be a positive int")
-        return cls(imap=imap, smtp=smtp, llm=llm, server=server, poll_interval_seconds=poll_interval)
+        mail = _require_mapping(data, "mail")
+        imap_data = _require_mapping(mail, "imap", path="mail")
+        smtp_data = _require_mapping(mail, "smtp", path="mail")
+        imap = _build_mail(imap_data, "imap")
+        smtp = _build_mail(smtp_data, "smtp")
+        llm_data = _require_mapping(data, "llm")
+        llm = _build_llm(llm_data)
+
+        server_kwargs: dict[str, Any] = {}
+        if "server" in data:
+            server_data = _require_mapping(data, "server")
+            if "ws_host" in server_data:
+                server_kwargs["ws_host"] = server_data["ws_host"]
+            if "ws_port" in server_data:
+                server_kwargs["ws_port"] = _validate_port(
+                    server_data["ws_port"], "server.ws_port"
+                )
+        server = ServerConfig(**server_kwargs)
+
+        config_kwargs: dict[str, Any] = {"imap": imap, "smtp": smtp, "llm": llm, "server": server}
+        if "poll_interval_seconds" in mail:
+            poll_interval = mail["poll_interval_seconds"]
+            if not isinstance(poll_interval, int) or poll_interval <= 0:
+                raise ValueError("mail.poll_interval_seconds must be a positive int")
+            config_kwargs["poll_interval_seconds"] = poll_interval
+        return cls(**config_kwargs)
 
 
 def _require(data: dict, key: str, path: str | None = None) -> None:
     if key not in data:
         full = f"{path}.{key}" if path else key
         raise ValueError(f"Missing required config field: {full}")
+
+
+def _require_mapping(data: dict, key: str, path: str | None = None) -> dict:
+    """Require ``key`` to exist in ``data`` and to be a mapping (dict).
+
+    Raises ValueError with the full field path if missing or non-dict.
+    """
+    _require(data, key, path=path)
+    value = data[key]
+    full = f"{path}.{key}" if path else key
+    if not isinstance(value, dict):
+        raise ValueError(
+            f"Invalid config field {full}: must be a mapping, got {type(value).__name__}"
+        )
+    return value
 
 
 def _build_mail(data: dict, kind: str) -> IMAPConfig | SMTPConfig:
