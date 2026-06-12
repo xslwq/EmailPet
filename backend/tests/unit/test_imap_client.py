@@ -1,6 +1,6 @@
 """Tests for emailpet.mail.imap_client."""
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from emailpet.mail.imap_client import IMAPClient, IMAPAuthError, IMAPCommandError
 
@@ -17,8 +17,32 @@ SAMPLE_RAW_EMAIL = (
 )
 
 
-def make_fake_aioimap(uid_search_return, uid_fetch_return=None, login_status="OK", select_status="OK"):
-    """Return a fake IMAP4_SSL instance."""
+# Same payload but Date header has no timezone offset.
+SAMPLE_RAW_EMAIL_NAIVE_DATE = (
+    b"From: someone@example.com\r\n"
+    b"To: me@example.com\r\n"
+    b"Subject: naive date test\r\n"
+    b"Date: Mon, 12 Jun 2026 10:00:00\r\n"
+    b"Content-Type: text/plain; charset=utf-8\r\n"
+    b"\r\n"
+    b"hello\r\n"
+)
+
+
+def make_fake_aioimap(
+    uid_search_return,
+    uid_fetch_return=None,
+    login_status="OK",
+    select_status="OK",
+    uid_overrides=None,
+):
+    """Return a fake IMAP4_SSL instance.
+
+    ``uid_overrides`` is an optional dict ``{command: (status, lines)}`` letting
+    individual tests override the response for a given UID command (e.g. force
+    STORE to return NO).
+    """
+    overrides = uid_overrides or {}
     fake = MagicMock()
     fake.wait_hello_from_server = AsyncMock(return_value=None)
     fake.login = AsyncMock(return_value=(login_status, [b"login response"]))
@@ -26,6 +50,8 @@ def make_fake_aioimap(uid_search_return, uid_fetch_return=None, login_status="OK
     fake.uid_search = AsyncMock(return_value=("OK", [uid_search_return, b"Search completed."]))
 
     async def _uid(command, *args):
+        if command in overrides:
+            return overrides[command]
         if command == "FETCH":
             return ("OK", [b"1 (UID 1 RFC822 {123}", uid_fetch_return, b")", b"Fetch completed."])
         if command == "STORE":
@@ -55,7 +81,7 @@ async def test_poll_returns_new_emails(patch_imap):
     fake = make_fake_aioimap(uid_search_return=b"42", uid_fetch_return=SAMPLE_RAW_EMAIL)
     patch_imap(fake)
     client = IMAPClient("imap.example.com", 993, "u", "p")
-    emails = await client.poll(seen_uids=set())
+    emails, processed = await client.poll(seen_uids=set())
     assert len(emails) == 1
     e = emails[0]
     assert e.uid == 42
@@ -64,6 +90,7 @@ async def test_poll_returns_new_emails(patch_imap):
     assert "测试邮件" in e.subject
     assert "你好" in e.body_text
     assert isinstance(e.received_at, datetime)
+    assert processed == [42]
 
 
 @pytest.mark.asyncio
@@ -71,10 +98,11 @@ async def test_poll_uid_dedup(patch_imap):
     fake = make_fake_aioimap(uid_search_return=b"42 43", uid_fetch_return=SAMPLE_RAW_EMAIL)
     patch_imap(fake)
     client = IMAPClient("imap.example.com", 993, "u", "p")
-    emails = await client.poll(seen_uids={42})
+    emails, processed = await client.poll(seen_uids={42})
     # should only fetch UID 43, not 42
     assert len(emails) == 1
     assert emails[0].uid == 43
+    assert processed == [43]
 
 
 @pytest.mark.asyncio
@@ -82,8 +110,9 @@ async def test_poll_empty(patch_imap):
     fake = make_fake_aioimap(uid_search_return=b"")
     patch_imap(fake)
     client = IMAPClient("imap.example.com", 993, "u", "p")
-    emails = await client.poll(seen_uids=set())
+    emails, processed = await client.poll(seen_uids=set())
     assert emails == []
+    assert processed == []
 
 
 @pytest.mark.asyncio
@@ -93,6 +122,25 @@ async def test_poll_auth_failure(patch_imap):
     client = IMAPClient("imap.example.com", 993, "u", "wrong")
     with pytest.raises(IMAPAuthError):
         await client.poll(seen_uids=set())
+
+
+@pytest.mark.asyncio
+async def test_poll_failed_parse_returns_uid(patch_imap, monkeypatch):
+    """A UID whose fetch/parse fails must still appear in processed_uids,
+    otherwise the caller would re-fetch the broken UID forever."""
+    fake = make_fake_aioimap(uid_search_return=b"99")
+    patch_imap(fake)
+    client = IMAPClient("imap.example.com", 993, "u", "p")
+
+    async def boom(uid):
+        raise RuntimeError("malformed email")
+
+    # connect first so _fetch_one isn't called via the real path
+    await client.connect()
+    monkeypatch.setattr(client, "_fetch_one", boom)
+    emails, processed = await client.poll(seen_uids=set())
+    assert emails == []
+    assert processed == [99]
 
 
 @pytest.mark.asyncio
@@ -135,6 +183,23 @@ async def test_archive_fallback_no_archive_folder(patch_imap):
 
 
 @pytest.mark.asyncio
+async def test_archive_store_failure(patch_imap):
+    """If COPY succeeds but STORE fails, the email is duplicated — must raise."""
+    fake = make_fake_aioimap(
+        uid_search_return=b"",
+        uid_overrides={"STORE": ("NO", [b"store failed"])},
+    )
+    patch_imap(fake)
+    client = IMAPClient("imap.example.com", 993, "u", "p")
+    await client.connect()
+    with pytest.raises(IMAPCommandError):
+        await client.archive(42)
+    # Sanity: COPY happened before the failure
+    calls = [c.args for c in fake.uid.await_args_list]
+    assert ("COPY", "42", "Archive") in calls
+
+
+@pytest.mark.asyncio
 async def test_mark_read(patch_imap):
     fake = make_fake_aioimap(uid_search_return=b"")
     patch_imap(fake)
@@ -143,3 +208,17 @@ async def test_mark_read(patch_imap):
     await client.mark_read(42)
     calls = [c.args for c in fake.uid.await_args_list]
     assert any(c[0] == "STORE" and c[1] == "42" and "\\Seen" in c[2] for c in calls)
+
+
+@pytest.mark.asyncio
+async def test_parse_email_naive_date_assumed_utc(patch_imap):
+    """RFC 5322 Date without timezone → received_at must be tz-aware (UTC)."""
+    fake = make_fake_aioimap(
+        uid_search_return=b"7",
+        uid_fetch_return=SAMPLE_RAW_EMAIL_NAIVE_DATE,
+    )
+    patch_imap(fake)
+    client = IMAPClient("imap.example.com", 993, "u", "p")
+    emails, _ = await client.poll(seen_uids=set())
+    assert len(emails) == 1
+    assert emails[0].received_at.tzinfo == timezone.utc

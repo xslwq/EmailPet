@@ -5,6 +5,7 @@ See docs/modules/backend/emailpet/mail/imap_client.md for full module doc.
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 from email.header import decode_header
 from email.message import Message
 from email.parser import BytesParser
@@ -59,7 +60,14 @@ class IMAPClient:
             logger.warning("imap logout failed", exc_info=True)
         self._client = None
 
-    async def poll(self, seen_uids: set[int]) -> list[Email]:
+    async def poll(self, seen_uids: set[int]) -> tuple[list[Email], list[int]]:
+        """Fetch new UNSEEN emails not in ``seen_uids``.
+
+        Returns ``(parsed_emails, processed_uids)``. ``processed_uids`` contains
+        both successfully parsed UIDs *and* UIDs whose fetch/parse failed —
+        callers are expected to mark all of them as seen so we don't re-fetch
+        broken UIDs forever.
+        """
         await self.connect()
         assert self._client is not None
         status, _ = await self._client.select("INBOX")
@@ -70,7 +78,7 @@ class IMAPClient:
             raise IMAPCommandError("UID SEARCH", lines)
         # lines[0] is e.g. b"1 2 3" or b""
         if not lines or not lines[0]:
-            return []
+            return [], []
         first = lines[0]
         if isinstance(first, (bytes, bytearray)):
             first = bytes(first).decode("ascii", errors="ignore")
@@ -82,13 +90,17 @@ class IMAPClient:
                 continue
         new_uids = [u for u in uids if u not in seen_uids]
         out: list[Email] = []
+        processed: list[int] = []
         for uid in new_uids:
             try:
                 email_obj = await self._fetch_one(uid)
                 out.append(email_obj)
+                processed.append(uid)
             except Exception:
                 logger.warning("failed to fetch/parse uid=%s", uid, exc_info=True)
-        return out
+                # Still mark as processed so caller doesn't re-attempt forever.
+                processed.append(uid)
+        return out, processed
 
     async def _fetch_one(self, uid: int) -> Email:
         assert self._client is not None
@@ -104,8 +116,16 @@ class IMAPClient:
         assert self._client is not None
         status, _ = await self._client.uid("COPY", str(uid), "Archive")
         if status == "OK":
-            await self._client.uid("STORE", str(uid), "+FLAGS (\\Deleted)")
-            await self._client.expunge()
+            store_status, store_resp = await self._client.uid(
+                "STORE", str(uid), "+FLAGS (\\Deleted)"
+            )
+            if store_status != "OK":
+                # COPY already duplicated the message; surface the failure
+                # rather than silently leaving a duplicate in INBOX.
+                raise IMAPCommandError("UID STORE", store_resp)
+            expunge_status, expunge_resp = await self._client.expunge()
+            if expunge_status != "OK":
+                raise IMAPCommandError("EXPUNGE", expunge_resp)
         else:
             logger.info("archive folder unavailable, fallback to mark_read for uid=%s", uid)
             await self._client.uid("STORE", str(uid), "+FLAGS (\\Seen)")
@@ -195,8 +215,11 @@ def _parse_email(uid: int, msg: Message) -> Email:
         except (TypeError, ValueError):
             received_at = None
     if received_at is None:
-        from datetime import datetime, timezone
         received_at = datetime.now(timezone.utc)
+    elif received_at.tzinfo is None:
+        # RFC 5322 allows dates without timezone offset; assume UTC so downstream
+        # comparisons against tz-aware datetimes don't blow up.
+        received_at = received_at.replace(tzinfo=timezone.utc)
     body_text = _extract_text(msg)
     return Email(
         uid=uid,
