@@ -21,5 +21,6 @@ class AgentState(TypedDict, total=False):
     current_summary: Optional[Summary]
     current_intent: Optional[str]   # "reply" | "archive" | "skip"
     current_draft: Optional[Draft]
+    draft_decision: Optional[str]   # "approve" | "modify" | "reject"
     user_feedback: Optional[str]
     history: list[dict]             # [{role: str, content: str}, ...]
