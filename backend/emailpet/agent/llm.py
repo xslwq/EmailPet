@@ -139,7 +139,8 @@ def _extract_json(text: str) -> dict:
         if len(parts) >= 2:
             inner = parts[1]
             if inner.lstrip().lower().startswith("json"):
-                inner = inner.split("\n", 1)[1] if "\n" in inner else ""
+                stripped = inner.lstrip()
+                inner = stripped[4:].lstrip()
             s = inner.strip()
     try:
         return json.loads(s)
