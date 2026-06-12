@@ -32,7 +32,7 @@ class SMTPClient:
         finally:
             try:
                 smtp.quit()
-            except smtplib.SMTPException:
+            except (smtplib.SMTPException, OSError):
                 pass
 
     async def close(self) -> None:

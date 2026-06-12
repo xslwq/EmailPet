@@ -72,3 +72,29 @@ async def test_close_no_op(mock_smtp_class):
     """close() is a no-op since each send opens a fresh connection."""
     client = SMTPClient("smtp.example.com", 465, "u", "p")
     await client.close()  # should not raise
+
+
+async def test_send_quit_called_on_sendmail_failure(mock_smtp_class):
+    """quit() must run even when sendmail raises, so connection is properly closed."""
+    cls, instance = mock_smtp_class
+    instance.sendmail.side_effect = smtplib.SMTPRecipientsRefused({"to@example.com": (550, b"no")})
+    client = SMTPClient("smtp.example.com", 465, "u@example.com", "p")
+    with pytest.raises(smtplib.SMTPRecipientsRefused):
+        await client.send("to@example.com", "subject", "body")
+    instance.quit.assert_called_once()
+
+
+async def test_quit_failure_swallowed_on_success(mock_smtp_class):
+    """quit() raising must not raise to caller when send itself succeeded."""
+    cls, instance = mock_smtp_class
+    instance.quit.side_effect = smtplib.SMTPServerDisconnected("bye")
+    client = SMTPClient("smtp.example.com", 465, "u@example.com", "p")
+    await client.send("to@example.com", "subject", "body")  # should not raise
+
+
+async def test_quit_oserror_swallowed_on_success(mock_smtp_class):
+    """quit() raising OSError must also not raise to caller (the actual bug fix)."""
+    cls, instance = mock_smtp_class
+    instance.quit.side_effect = BrokenPipeError("conn dead")
+    client = SMTPClient("smtp.example.com", 465, "u@example.com", "p")
+    await client.send("to@example.com", "subject", "body")  # should not raise
