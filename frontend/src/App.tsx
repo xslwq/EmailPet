@@ -22,7 +22,7 @@ const styles = {
     background: 'rgba(255, 255, 255, 0.92)',
     borderRadius: '16px',
     overflow: 'hidden',
-    fontFamily: 'system-ui, -apple-system, sans-serif',
+    fontFamily: '"Microsoft YaHei", "Noto Sans CJK SC", "PingFang SC", system-ui, -apple-system, sans-serif',
     boxShadow: '0 6px 24px rgba(0, 0, 0, 0.18)',
     position: 'relative',
   } as React.CSSProperties,
@@ -33,6 +33,7 @@ const styles = {
     cursor: 'move',
     userSelect: 'none',
     background: 'rgba(255,255,255,0.6)',
+    WebkitAppRegion: 'drag',
   } as React.CSSProperties,
   scroll: {
     flex: 1,
@@ -84,22 +85,6 @@ export default function App() {
     return () => window.clearTimeout(t)
   }, [lastTs])
 
-  // drag handle: mousedown on header sends drag-start, listen for move/up at window level
-  const handleHeaderMouseDown = (e: React.MouseEvent) => {
-    if (!window.electronAPI) return
-    window.electronAPI.dragStart(e.screenX, e.screenY)
-    const handleMove = (ev: MouseEvent) => {
-      window.electronAPI?.dragMove(ev.screenX, ev.screenY)
-    }
-    const handleUp = () => {
-      window.electronAPI?.dragEnd()
-      window.removeEventListener('mousemove', handleMove)
-      window.removeEventListener('mouseup', handleUp)
-    }
-    window.addEventListener('mousemove', handleMove)
-    window.addEventListener('mouseup', handleUp)
-  }
-
   const renderedMessages = useMemo(
     () =>
       messages.map((m) => (
@@ -125,7 +110,7 @@ export default function App() {
         {connected ? '在线' : '离线'}
       </div>
 
-      <div style={styles.header} onMouseDown={handleHeaderMouseDown}>
+      <div style={styles.header}>
         <Pet state={petState} />
       </div>
 
