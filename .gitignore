@@ -18,6 +18,8 @@ out/
 # EmailPet
 backend/config.yaml
 backend/emailpet/storage/*.db
+backend/emailpet/storage/*.db-shm
+backend/emailpet/storage/*.db-wal
 
 # Docs (本地详细说明文档，不入仓库)
 docs/

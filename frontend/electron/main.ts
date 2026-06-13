@@ -1,6 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// ESM-compat __dirname
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
 let mainWindow: BrowserWindow | null = null
 let pythonProcess: ChildProcess | null = null
@@ -8,11 +13,14 @@ let crashCount = 0
 let intentionalQuit = false
 
 function createWindow() {
+  // WSLg 下 transparent 窗口经常完全不可见；用 has_frame=false + 不透明背景做"圆角浮窗"效果。
+  const useTransparent = process.platform === 'darwin' || process.env.EMAILPET_TRANSPARENT === '1'
   mainWindow = new BrowserWindow({
     width: 380,
     height: 500,
     frame: false,
-    transparent: true,
+    transparent: useTransparent,
+    backgroundColor: useTransparent ? undefined : '#ffffff',
     alwaysOnTop: true,
     resizable: false,
     skipTaskbar: false,
@@ -102,7 +110,11 @@ function startPythonBackend() {
 }
 
 app.whenReady().then(() => {
-  startPythonBackend()
+  // In dev, set EMAILPET_NO_SPAWN=1 to skip auto-starting the backend
+  // (you're already running `python -m emailpet.main` manually).
+  if (!process.env.EMAILPET_NO_SPAWN) {
+    startPythonBackend()
+  }
   createWindow()
 })
 
