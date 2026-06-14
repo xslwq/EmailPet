@@ -172,12 +172,57 @@ async def execute_reply(
 async def execute_archive(
     state: AgentState,
     tools: AgentTools,
+    push_callback: PushCallback,
+    thread_id: str | None = None,
 ) -> dict[str, Any]:
-    """Archive the current email (user-initiated, not silent)."""
+    """Archive the current email (user-initiated, not silent).
+
+    Unlike silent_archive, this path is user-driven so we DO push a
+    confirmation event. Silent_archive stays quiet by design.
+    """
     email = state.get("current_email")
     if email is None:
         return {}
-    await tools.archive(email)
+    result = await tools.archive(email)
+    if result.get("status") == "archived":
+        await push_callback(
+            "agent_say",
+            {"text": f"好的，已归档：{email.subject[:30]}"},
+        )
+    else:
+        await push_callback(
+            "error",
+            {
+                "code": "archive_failed",
+                "message": result.get("message", "归档失败"),
+            },
+        )
+    return {}
+
+
+async def notify_skip_node(
+    state: AgentState,
+    push_callback: PushCallback,
+) -> dict[str, Any]:
+    """Acknowledge a 'skip' intent so the user gets closure.
+
+    Reached when the user picks 'skip' on a summary bubble — graph would
+    otherwise silently end and the user wouldn't know the cat heard them.
+    """
+    await push_callback("agent_say", {"text": "好，先放着不管。"})
+    return {}
+
+
+async def notify_reject_node(
+    state: AgentState,
+    push_callback: PushCallback,
+) -> dict[str, Any]:
+    """Acknowledge a 'reject' decision on a draft reply.
+
+    Same reason as notify_skip_node — graph reaching END silently feels
+    broken from the user's POV.
+    """
+    await push_callback("agent_say", {"text": "好，这封不回了。"})
     return {}
 
 
@@ -197,7 +242,7 @@ def route_intent(state: AgentState) -> str:
         return "draft_reply"
     if intent == "archive":
         return "execute_archive"
-    return END  # "skip" or unset
+    return "notify_skip"  # "skip" or unset → acknowledge, then END
 
 
 def route_decision(state: AgentState) -> str:
@@ -206,4 +251,4 @@ def route_decision(state: AgentState) -> str:
         return "execute_reply"
     if decision == "modify":
         return "draft_reply"
-    return END  # "reject" or unset
+    return "notify_reject"  # "reject" or unset → acknowledge, then END

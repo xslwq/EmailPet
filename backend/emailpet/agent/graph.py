@@ -17,6 +17,8 @@ from emailpet.agent.nodes import (
     execute_archive,
     execute_reply,
     is_important_condition,
+    notify_reject_node,
+    notify_skip_node,
     notify_summary_node,
     route_decision,
     route_intent,
@@ -72,7 +74,15 @@ def build_workflow(
     )
     workflow.add_node(
         "execute_archive",
-        partial(execute_archive, tools=tools),
+        partial(execute_archive, tools=tools, push_callback=push_callback),
+    )
+    workflow.add_node(
+        "notify_skip",
+        partial(notify_skip_node, push_callback=push_callback),
+    )
+    workflow.add_node(
+        "notify_reject",
+        partial(notify_reject_node, push_callback=push_callback),
     )
 
     workflow.set_entry_point("summarize")
@@ -92,7 +102,7 @@ def build_workflow(
         {
             "draft_reply": "draft_reply",
             "execute_archive": "execute_archive",
-            END: END,
+            "notify_skip": "notify_skip",
         },
     )
     workflow.add_edge("draft_reply", "wait_decision")
@@ -102,11 +112,13 @@ def build_workflow(
         {
             "execute_reply": "execute_reply",
             "draft_reply": "draft_reply",
-            END: END,
+            "notify_reject": "notify_reject",
         },
     )
     workflow.add_edge("execute_reply", END)
     workflow.add_edge("execute_archive", END)
+    workflow.add_edge("notify_skip", END)
+    workflow.add_edge("notify_reject", END)
 
     return workflow
 

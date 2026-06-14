@@ -11,6 +11,8 @@ from emailpet.agent.nodes import (
     execute_archive,
     execute_reply,
     is_important_condition,
+    notify_reject_node,
+    notify_skip_node,
     notify_summary_node,
     route_decision,
     route_intent,
@@ -206,12 +208,43 @@ async def test_execute_reply_failure_pushes_error(sample_email, push_cb):
 # ---------------- execute_archive ----------------
 
 
-async def test_execute_archive_calls_tool(sample_email):
+async def test_execute_archive_calls_tool(sample_email, push_cb):
     tools = MagicMock()
     tools.archive = AsyncMock(return_value={"status": "archived"})
     state = {"current_email": sample_email}
-    await execute_archive(state, tools)
+    await execute_archive(state, tools, push_cb)
     tools.archive.assert_awaited_once_with(sample_email)
+    # success path now pushes a confirmation agent_say
+    event_type, payload = push_cb.await_args.args
+    assert event_type == "agent_say"
+    assert "归档" in payload["text"]
+
+
+async def test_execute_archive_failure_pushes_error(sample_email, push_cb):
+    tools = MagicMock()
+    tools.archive = AsyncMock(return_value={"status": "error", "message": "imap died"})
+    state = {"current_email": sample_email}
+    await execute_archive(state, tools, push_cb)
+    event_type, payload = push_cb.await_args.args
+    assert event_type == "error"
+    assert "imap died" in payload["message"]
+
+
+# ---------------- notify_skip / notify_reject ----------------
+
+
+async def test_notify_skip_pushes_acknowledgement(push_cb):
+    await notify_skip_node({}, push_cb)
+    event_type, payload = push_cb.await_args.args
+    assert event_type == "agent_say"
+    assert payload["text"]
+
+
+async def test_notify_reject_pushes_acknowledgement(push_cb):
+    await notify_reject_node({}, push_cb)
+    event_type, payload = push_cb.await_args.args
+    assert event_type == "agent_say"
+    assert payload["text"]
 
 
 # ---------------- routers ----------------
@@ -237,12 +270,12 @@ def test_route_intent_archive():
     assert route_intent({"current_intent": "archive"}) == "execute_archive"
 
 
-def test_route_intent_skip_returns_end():
-    assert route_intent({"current_intent": "skip"}) == END
+def test_route_intent_skip_routes_to_notify():
+    assert route_intent({"current_intent": "skip"}) == "notify_skip"
 
 
-def test_route_intent_unset_returns_end():
-    assert route_intent({}) == END
+def test_route_intent_unset_routes_to_notify():
+    assert route_intent({}) == "notify_skip"
 
 
 def test_route_decision_approve():
@@ -253,9 +286,9 @@ def test_route_decision_modify():
     assert route_decision({"draft_decision": "modify"}) == "draft_reply"
 
 
-def test_route_decision_reject_returns_end():
-    assert route_decision({"draft_decision": "reject"}) == END
+def test_route_decision_reject_routes_to_notify():
+    assert route_decision({"draft_decision": "reject"}) == "notify_reject"
 
 
-def test_route_decision_unset_returns_end():
-    assert route_decision({}) == END
+def test_route_decision_unset_routes_to_notify():
+    assert route_decision({}) == "notify_reject"
