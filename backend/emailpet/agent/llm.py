@@ -64,6 +64,18 @@ class LLMClient:
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model = model
 
+    async def extract_profile_patch(
+        self, current_profile: dict, original_draft: str, user_feedback: str, email_body: str
+    ) -> dict:
+        from emailpet.agent.profile_update import PROFILE_SYSTEM, PROFILE_USER_TEMPLATE
+        user_msg = PROFILE_USER_TEMPLATE.format(
+            current_profile=json.dumps(current_profile, ensure_ascii=False),
+            original_draft=original_draft,
+            user_feedback=user_feedback,
+            email_body=email_body,
+        )
+        return await self._call_json(PROFILE_SYSTEM, user_msg)
+
     async def summarize(self, email_body: str) -> Summary:
         body = _truncate(email_body)
         system = SUMMARIZE_SYSTEM

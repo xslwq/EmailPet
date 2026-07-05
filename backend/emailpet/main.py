@@ -22,6 +22,7 @@ from emailpet.mail.imap_client import IMAPClient
 from emailpet.mail.smtp_client import SMTPClient
 from emailpet.storage.archive_log import ArchiveLog
 from emailpet.storage.uid_store import UIDStore
+from emailpet.storage.user_profile_store import UserProfileStore
 from emailpet.ws import ConnectionManager, make_app
 
 logging.basicConfig(
@@ -35,6 +36,7 @@ STORAGE_DIR = Path(__file__).parent / "storage"
 CHECKPOINT_DB = STORAGE_DIR / "checkpoint.db"
 UID_DB = STORAGE_DIR / "uid_store.db"
 ARCHIVE_DB = STORAGE_DIR / "archives.db"
+PROFILE_DB = STORAGE_DIR / "profile.db"
 
 
 class AppContext:
@@ -48,6 +50,7 @@ class AppContext:
         self.tools: Optional[AgentTools] = None
         self.archive_log: Optional[ArchiveLog] = None
         self.uid_store: Optional[UIDStore] = None
+        self.profile_store: Optional[UserProfileStore] = None
         self.manager: Optional[ConnectionManager] = None
         self.agent = None
         self.saver_cm = None
@@ -71,6 +74,7 @@ def _build_context(config_path: Path) -> AppContext:
     ctx.tools = AgentTools(ctx.imap, ctx.smtp)
     ctx.archive_log = ArchiveLog(ARCHIVE_DB)
     ctx.uid_store = UIDStore(UID_DB)
+    ctx.profile_store = UserProfileStore(PROFILE_DB)
     ctx.manager = ConnectionManager()
     return ctx
 
@@ -117,6 +121,7 @@ async def lifespan(app: FastAPI):
         llm=ctx.llm,
         tools=ctx.tools,
         archive_log=ctx.archive_log,
+        profile_store=ctx.profile_store,
         push_callback=ctx.manager.push,
         checkpoint_path=CHECKPOINT_DB,
     )

@@ -154,6 +154,7 @@ async def test_draft_reply_pushes_and_stores(sample_email, push_cb):
     state = {"current_email": sample_email, "user_feedback": None}
     patch = await draft_reply_node(state, llm, push_cb, thread_id="email_42")
     assert patch["current_draft"].body == "好的"
+    assert patch["original_draft"].body == "好的"
     assert patch["user_feedback"] is None  # cleared
     push_cb.assert_awaited_once()
     event_type, payload = push_cb.await_args.args
@@ -283,7 +284,7 @@ def test_route_decision_approve():
 
 
 def test_route_decision_modify():
-    assert route_decision({"draft_decision": "modify"}) == "draft_reply"
+    assert route_decision({"draft_decision": "modify"}) == "profile_update"
 
 
 def test_route_decision_reject_routes_to_notify():

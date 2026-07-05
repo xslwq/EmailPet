@@ -138,7 +138,7 @@ async def draft_reply_node(
     }
     await push_callback("draft", payload)
     # clear feedback so next iteration doesn't double-apply it
-    return {"current_draft": draft, "user_feedback": None}
+    return {"current_draft": draft, "original_draft": draft, "user_feedback": None}
 
 
 async def execute_reply(
@@ -251,5 +251,5 @@ def route_decision(state: AgentState) -> str:
     if decision == "approve":
         return "execute_reply"
     if decision == "modify":
-        return "draft_reply"
+        return "profile_update"
     return "notify_reject"  # "reject" or unset → acknowledge, then END

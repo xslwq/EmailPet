@@ -27,9 +27,11 @@ from emailpet.agent.nodes import (
     wait_decision_node,
     wait_intent_node,
 )
+from emailpet.agent.profile_update import profile_update_node
 from emailpet.agent.state import AgentState
 from emailpet.agent.tools import AgentTools
 from emailpet.storage.archive_log import ArchiveLog
+from emailpet.storage.user_profile_store import UserProfileStore
 
 PushCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
 
@@ -38,6 +40,7 @@ def build_workflow(
     llm: LLMClient,
     tools: AgentTools,
     archive_log: ArchiveLog,
+    profile_store: UserProfileStore,
     push_callback: PushCallback,
 ) -> StateGraph:
     """Build (but do not compile) the agent StateGraph.
@@ -84,6 +87,10 @@ def build_workflow(
         "notify_reject",
         partial(notify_reject_node, push_callback=push_callback),
     )
+    workflow.add_node(
+        "profile_update",
+        partial(profile_update_node, llm=llm, profile_store=profile_store, push_callback=push_callback),
+    )
 
     workflow.set_entry_point("summarize")
     workflow.add_conditional_edges(
@@ -111,10 +118,11 @@ def build_workflow(
         route_decision,
         {
             "execute_reply": "execute_reply",
-            "draft_reply": "draft_reply",
+            "profile_update": "profile_update",
             "notify_reject": "notify_reject",
         },
     )
+    workflow.add_edge("profile_update", "draft_reply")
     workflow.add_edge("execute_reply", END)
     workflow.add_edge("execute_archive", END)
     workflow.add_edge("notify_skip", END)
@@ -127,6 +135,7 @@ async def build_agent(
     llm: LLMClient,
     tools: AgentTools,
     archive_log: ArchiveLog,
+    profile_store: UserProfileStore,
     push_callback: PushCallback,
     checkpoint_path: str | Path,
 ):
@@ -140,7 +149,7 @@ async def build_agent(
         (compiled_agent, saver_cm) — caller must `await saver_cm.__aexit__(None, None, None)`
         when done (typically at process shutdown).
     """
-    workflow = build_workflow(llm, tools, archive_log, push_callback)
+    workflow = build_workflow(llm, tools, archive_log, profile_store, push_callback)
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     saver_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
     saver = await saver_cm.__aenter__()

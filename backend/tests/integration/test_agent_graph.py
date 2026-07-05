@@ -7,6 +7,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 
 from emailpet.agent.graph import build_workflow
 from emailpet.mail.models import Draft, Email, Summary
+from emailpet.storage.user_profile_store import UserProfileStore
 
 
 @pytest.fixture
@@ -27,9 +28,9 @@ def push_cb():
     return AsyncMock()
 
 
-def make_agent(llm, tools, archive_log, push_cb):
+def make_agent(llm, tools, archive_log, profile_store, push_cb):
     """Build a workflow and compile with an in-memory checkpointer for tests."""
-    workflow = build_workflow(llm, tools, archive_log, push_cb)
+    workflow = build_workflow(llm, tools, archive_log, profile_store, push_cb)
     return workflow.compile(
         checkpointer=InMemorySaver(),
         interrupt_before=["wait_intent", "wait_decision"],
@@ -48,7 +49,9 @@ async def test_silent_archive_path(sample_email, push_cb):
     tools.archive = AsyncMock(return_value={"status": "archived"})
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
     await agent.ainvoke({"pending_emails": [sample_email]}, config)
 
@@ -75,7 +78,9 @@ async def test_important_path_pauses_at_interrupt(sample_email, push_cb):
     tools = MagicMock()
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
     await agent.ainvoke({"pending_emails": [sample_email]}, config)
 
@@ -98,7 +103,9 @@ async def test_summarize_consumes_pending_email(sample_email, push_cb):
     tools.archive = AsyncMock(return_value={"status": "archived"})
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
     final = await agent.ainvoke({"pending_emails": [sample_email]}, config)
     assert final["pending_emails"] == []
@@ -117,7 +124,9 @@ async def test_intent_archive_path(sample_email, push_cb):
     tools.archive = AsyncMock(return_value={"status": "archived"})
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
     await agent.ainvoke({"pending_emails": [sample_email]}, config)
 
@@ -142,7 +151,9 @@ async def test_full_reply_flow(sample_email, push_cb):
     tools.reply = AsyncMock(return_value={"status": "sent"})
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
 
     # First run: until first interrupt (before wait_intent)
@@ -180,11 +191,14 @@ async def test_modify_loop(sample_email, push_cb):
             Draft(body="v3", reason="r3"),
         ]
     )
+    llm.extract_profile_patch = AsyncMock(return_value={})
     tools = MagicMock()
     tools.reply = AsyncMock(return_value={"status": "sent"})
     archive_log = MagicMock()
 
-    agent = make_agent(llm, tools, archive_log, push_cb)
+    profile_store = MagicMock()
+    profile_store.get = MagicMock(return_value={})
+    agent = make_agent(llm, tools, archive_log, profile_store, push_cb)
     config = {"configurable": {"thread_id": "email_42"}}
 
     await agent.ainvoke({"pending_emails": [sample_email]}, config)
