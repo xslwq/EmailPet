@@ -12,6 +12,7 @@ dependencies = [
     "openai>=1.50.0",
     "pyyaml>=6.0",
     "beautifulsoup4>=4.12",
+    "sqlite-vec>=0.1.0",
 ]
 
 [project.optional-dependencies]
