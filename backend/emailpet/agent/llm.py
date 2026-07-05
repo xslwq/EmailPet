@@ -93,14 +93,15 @@ class LLMClient:
                 needs_reply=True,
             )
 
-    async def draft_reply(self, original_body: str, feedback: str | None = None) -> Draft:
+    async def draft_reply(self, original_body: str, feedback: str | None = None, profile_block: str = "") -> Draft:
         body = _truncate(original_body)
         feedback_block = (
             f"用户对上次草稿的反馈：{feedback}\n请根据反馈重新起草。"
             if feedback
             else "这是首次起草。"
         )
-        user = DRAFT_USER_TEMPLATE.format(body=body, feedback_block=feedback_block)
+        full_profile = f"\n\n{profile_block}" if profile_block else ""
+        user = DRAFT_USER_TEMPLATE.format(body=body, feedback_block=feedback_block) + full_profile
         try:
             data = await self._call_json(DRAFT_SYSTEM, user)
             return _validate_draft(data)

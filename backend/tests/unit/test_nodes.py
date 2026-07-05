@@ -167,7 +167,7 @@ async def test_draft_reply_with_feedback_passes_to_llm(sample_email, push_cb):
     llm.draft_reply = AsyncMock(return_value=Draft(body="x", reason="y"))
     state = {"current_email": sample_email, "user_feedback": "客气一点"}
     await draft_reply_node(state, llm, push_cb)
-    llm.draft_reply.assert_awaited_once_with(sample_email.body_text, feedback="客气一点")
+    llm.draft_reply.assert_awaited_once_with(sample_email.body_text, feedback="客气一点", profile_block="")
 
 
 async def test_draft_reply_llm_error_short_circuits(sample_email, push_cb):
@@ -178,6 +178,23 @@ async def test_draft_reply_llm_error_short_circuits(sample_email, push_cb):
     assert patch["draft_decision"] == "reject"
     event_type, _ = push_cb.await_args.args
     assert event_type == "error"
+
+
+async def test_draft_reply_injects_profile(sample_email, push_cb, tmp_path):
+    from emailpet.storage.user_profile_store import UserProfileStore
+    store = UserProfileStore(tmp_path / "profile.db")
+    store.merge({"display_name": "小王", "tone": "casual", "common_phrases": ["祝好"]})
+    llm = MagicMock()
+    llm.draft_reply = AsyncMock(return_value=Draft(body="好的", reason="ok"))
+    llm.extract_profile_patch = AsyncMock(return_value={})
+    state = {"current_email": sample_email, "user_feedback": None}
+    await draft_reply_node(state, llm, push_cb, profile_store=store)
+    args, kwargs = llm.draft_reply.call_args
+    # 验证 profile 被拼进 prompt（第 3 个位置参数或 keyword）
+    profile_block = kwargs.get("profile_block") or (args[2] if len(args) > 2 else "")
+    assert "小王" in profile_block
+    assert "casual" in profile_block
+    assert "祝好" in profile_block
 
 
 # ---------------- execute_reply ----------------

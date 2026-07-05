@@ -117,6 +117,7 @@ async def draft_reply_node(
     state: AgentState,
     llm: LLMClient,
     push_callback: PushCallback,
+    profile_store: Any = None,
     thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Generate a reply draft via LLM, push it to the user, store in state."""
@@ -125,8 +126,9 @@ async def draft_reply_node(
         logger.warning("draft_reply_node missing current_email")
         return {}
     feedback = state.get("user_feedback")
+    profile_block = _build_profile_block(profile_store) if profile_store else ""
     try:
-        draft = await llm.draft_reply(email.body_text, feedback=feedback)
+        draft = await llm.draft_reply(email.body_text, feedback=feedback, profile_block=profile_block)
     except LLMError as e:
         logger.warning("draft_reply LLM failure: %s", e)
         await push_callback("error", {"code": "llm_draft_failed", "message": str(e)})
@@ -139,6 +141,25 @@ async def draft_reply_node(
     await push_callback("draft", payload)
     # clear feedback so next iteration doesn't double-apply it
     return {"current_draft": draft, "original_draft": draft, "user_feedback": None}
+
+
+def _build_profile_block(profile_store: Any) -> str:
+    """Build a natural language profile block from the user profile store."""
+    profile = profile_store.get()
+    parts = []
+    if profile.get("display_name"):
+        parts.append(f"称呼：{profile['display_name']}")
+    if profile.get("signature"):
+        parts.append(f"签名：{profile['signature']}")
+    if profile.get("tone"):
+        parts.append(f"语气：{profile['tone']}")
+    if profile.get("honorific") is not None:
+        parts.append(f"敬语：{'使用' if profile['honorific'] else '不使用'}")
+    if profile.get("common_phrases"):
+        parts.append(f"常用话术：{', '.join(profile['common_phrases'])}")
+    if not parts:
+        return ""
+    return "用户回复风格偏好：\n" + "\n".join(parts)
 
 
 async def execute_reply(

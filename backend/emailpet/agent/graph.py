@@ -68,7 +68,7 @@ def build_workflow(
     workflow.add_node("wait_intent", wait_intent_node)
     workflow.add_node(
         "draft_reply",
-        partial(draft_reply_node, llm=llm, push_callback=push_callback),
+        partial(draft_reply_node, llm=llm, push_callback=push_callback, profile_store=profile_store),
     )
     workflow.add_node("wait_decision", wait_decision_node)
     workflow.add_node(
