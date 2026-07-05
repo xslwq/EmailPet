@@ -113,3 +113,66 @@ def test_load_config_nested_not_dict(tmp_path):
     p.write_text("mail:\n  imap: oops\n", encoding="utf-8")
     with pytest.raises(ValueError, match="mail.imap"):
         Config.from_yaml(p)
+
+
+def test_config_with_embedding(tmp_path):
+    data = dict(VALID_CONFIG)
+    data["embedding"] = {
+        "base_url": "https://embedding.example.com/v1",
+        "api_key": "sk-embedding-key",
+        "model": "text-embedding-3-small"
+    }
+    p = _write_config(tmp_path, data)
+    cfg = Config.from_yaml(p)
+    assert cfg.embedding is not None
+    assert cfg.embedding.base_url == "https://embedding.example.com/v1"
+    assert cfg.embedding.api_key == "sk-embedding-key"
+    assert cfg.embedding.model == "text-embedding-3-small"
+
+
+def test_config_embedding_optional(tmp_path):
+    """embedding block is optional; Config.embedding should be None when missing."""
+    p = _write_config(tmp_path, VALID_CONFIG)
+    cfg = Config.from_yaml(p)
+    assert cfg.embedding is None
+
+
+def test_config_embedding_missing_base_url(tmp_path):
+    data = dict(VALID_CONFIG)
+    data["embedding"] = {
+        "api_key": "sk-embedding-key",
+        "model": "text-embedding-3-small"
+    }
+    p = _write_config(tmp_path, data)
+    with pytest.raises(ValueError, match="embedding.base_url"):
+        Config.from_yaml(p)
+
+
+def test_config_embedding_missing_api_key(tmp_path):
+    data = dict(VALID_CONFIG)
+    data["embedding"] = {
+        "base_url": "https://embedding.example.com/v1",
+        "model": "text-embedding-3-small"
+    }
+    p = _write_config(tmp_path, data)
+    with pytest.raises(ValueError, match="embedding.api_key"):
+        Config.from_yaml(p)
+
+
+def test_config_embedding_missing_model(tmp_path):
+    data = dict(VALID_CONFIG)
+    data["embedding"] = {
+        "base_url": "https://embedding.example.com/v1",
+        "api_key": "sk-embedding-key"
+    }
+    p = _write_config(tmp_path, data)
+    with pytest.raises(ValueError, match="embedding.model"):
+        Config.from_yaml(p)
+
+
+def test_config_embedding_not_dict(tmp_path):
+    data = dict(VALID_CONFIG)
+    data["embedding"] = "not a dict"
+    p = _write_config(tmp_path, data)
+    with pytest.raises(ValueError, match="embedding"):
+        Config.from_yaml(p)

@@ -19,3 +19,8 @@ llm:
 server:
   ws_host: 127.0.0.1
   ws_port: 8765
+
+embedding:
+  base_url: "https://api.example.com/v1"
+  api_key: "sk-your-embedding-key"
+  model: "text-embedding-3-small"

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import yaml
 
@@ -41,12 +41,20 @@ class ServerConfig:
 
 
 @dataclass(frozen=True)
+class EmbeddingConfig:
+    base_url: str
+    api_key: str
+    model: str
+
+
+@dataclass(frozen=True)
 class Config:
     imap: IMAPConfig
     smtp: SMTPConfig
     llm: LLMConfig
     server: ServerConfig = field(default_factory=ServerConfig)
     poll_interval_seconds: int = 30
+    embedding: Optional[EmbeddingConfig] = None
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
@@ -84,7 +92,19 @@ class Config:
                 )
         server = ServerConfig(**server_kwargs)
 
-        config_kwargs: dict[str, Any] = {"imap": imap, "smtp": smtp, "llm": llm, "server": server}
+        embedding: Optional[EmbeddingConfig] = None
+        if "embedding" in data:
+            emb_data = _require_mapping(data, "embedding")
+            for f in ("base_url", "api_key", "model"):
+                if f not in emb_data:
+                    raise ValueError(f"Missing required config field: embedding.{f}")
+            embedding = EmbeddingConfig(
+                base_url=emb_data["base_url"],
+                api_key=str(emb_data["api_key"]),
+                model=emb_data["model"],
+            )
+
+        config_kwargs: dict[str, Any] = {"imap": imap, "smtp": smtp, "llm": llm, "server": server, "embedding": embedding}
         if "poll_interval_seconds" in mail:
             poll_interval = mail["poll_interval_seconds"]
             if not isinstance(poll_interval, int) or poll_interval <= 0:
