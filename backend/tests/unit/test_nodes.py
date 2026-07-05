@@ -360,3 +360,55 @@ async def test_notify_summary_embedding_failure_does_not_block(sample_email, imp
     push_cb.assert_awaited()
     row = store.get_by_uid(42)
     assert row["indexed_at"] is None
+
+
+# ---------------- Task 9: 行为回填 execute_reply/archive/skip 写 emails.user_action ----------------
+
+
+async def test_execute_reply_updates_action(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, important_summary)
+    tools = MagicMock()
+    tools.reply = AsyncMock(return_value={"status": "sent"})
+    draft = Draft(body="好的", reason="ok")
+    state = {"current_email": sample_email, "current_draft": draft}
+    await execute_reply(state, tools, push_cb, emails_store=store)
+    row = store.get_by_uid(42)
+    assert row["user_action"] == "replied"
+    assert row["replied_body"] == "好的"
+
+
+async def test_execute_archive_updates_action(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, important_summary)
+    tools = MagicMock()
+    tools.archive = AsyncMock(return_value={"status": "archived"})
+    state = {"current_email": sample_email}
+    await execute_archive(state, tools, push_cb, emails_store=store)
+    row = store.get_by_uid(42)
+    assert row["user_action"] == "archived"
+
+
+async def test_silent_archive_updates_action(sample_email, unimportant_summary, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, unimportant_summary)
+    tools = MagicMock()
+    tools.archive = AsyncMock(return_value={"status": "archived"})
+    archive_log = MagicMock()
+    state = {"current_email": sample_email, "current_summary": unimportant_summary}
+    await silent_archive_node(state, tools, archive_log, emails_store=store)
+    row = store.get_by_uid(42)
+    assert row["user_action"] == "archived"
+
+
+async def test_notify_skip_updates_action(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, important_summary)
+    state = {"current_email": sample_email}
+    await notify_skip_node(state, push_cb, emails_store=store)
+    row = store.get_by_uid(42)
+    assert row["user_action"] == "skipped"

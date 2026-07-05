@@ -48,6 +48,7 @@ async def silent_archive_node(
     state: AgentState,
     tools: AgentTools,
     archive_log: Any,  # ArchiveLog interface — duck-typed for test simplicity
+    emails_store: Any = None,
 ) -> dict[str, Any]:
     """Silently archive a not-important email + write to local log."""
     email = state.get("current_email")
@@ -58,6 +59,9 @@ async def silent_archive_node(
     result = await tools.archive(email)
     if result.get("status") != "archived":
         logger.warning("silent_archive failed for uid=%s: %s", email.uid, result)
+    else:
+        if emails_store is not None:
+            emails_store.update_action(email.uid, "archived")
     try:
         archive_log.log(email, summary.category)
     except Exception as e:  # noqa: BLE001
@@ -180,6 +184,7 @@ async def execute_reply(
     state: AgentState,
     tools: AgentTools,
     push_callback: PushCallback,
+    emails_store: Any = None,
     thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Send the draft via SMTP, push 'sent' event."""
@@ -190,6 +195,8 @@ async def execute_reply(
         return {}
     result = await tools.reply(email, draft.body)
     if result.get("status") == "sent":
+        if emails_store is not None:
+            emails_store.update_action(email.uid, "replied", replied_body=draft.body)
         await push_callback(
             "sent",
             {"thread_id": thread_id or f"email_{email.uid}", "email_id": str(email.uid)},
@@ -209,6 +216,7 @@ async def execute_archive(
     state: AgentState,
     tools: AgentTools,
     push_callback: PushCallback,
+    emails_store: Any = None,
     thread_id: str | None = None,
 ) -> dict[str, Any]:
     """Archive the current email (user-initiated, not silent).
@@ -221,6 +229,8 @@ async def execute_archive(
         return {}
     result = await tools.archive(email)
     if result.get("status") == "archived":
+        if emails_store is not None:
+            emails_store.update_action(email.uid, "archived")
         await push_callback(
             "agent_say",
             {"text": f"好的，已归档：{email.subject[:30]}"},
@@ -239,12 +249,16 @@ async def execute_archive(
 async def notify_skip_node(
     state: AgentState,
     push_callback: PushCallback,
+    emails_store: Any = None,
 ) -> dict[str, Any]:
     """Acknowledge a 'skip' intent so the user gets closure.
 
     Reached when the user picks 'skip' on a summary bubble — graph would
     otherwise silently end and the user wouldn't know the cat heard them.
     """
+    email = state.get("current_email")
+    if email is not None and emails_store is not None:
+        emails_store.update_action(email.uid, "skipped")
     await push_callback("agent_say", {"text": "好，先放着不管。"})
     return {}
 

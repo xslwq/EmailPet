@@ -65,7 +65,7 @@ def build_workflow(
     )
     workflow.add_node(
         "silent_archive",
-        partial(silent_archive_node, tools=tools, archive_log=archive_log),
+        partial(silent_archive_node, tools=tools, archive_log=archive_log, emails_store=emails_store),
     )
     workflow.add_node(
         "notify_summary",
@@ -79,15 +79,15 @@ def build_workflow(
     workflow.add_node("wait_decision", wait_decision_node)
     workflow.add_node(
         "execute_reply",
-        partial(execute_reply, tools=tools, push_callback=push_callback),
+        partial(execute_reply, tools=tools, push_callback=push_callback, emails_store=emails_store),
     )
     workflow.add_node(
         "execute_archive",
-        partial(execute_archive, tools=tools, push_callback=push_callback),
+        partial(execute_archive, tools=tools, push_callback=push_callback, emails_store=emails_store),
     )
     workflow.add_node(
         "notify_skip",
-        partial(notify_skip_node, push_callback=push_callback),
+        partial(notify_skip_node, push_callback=push_callback, emails_store=emails_store),
     )
     workflow.add_node(
         "notify_reject",
