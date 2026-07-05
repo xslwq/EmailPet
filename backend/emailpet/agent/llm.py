@@ -35,10 +35,13 @@ SUMMARIZE_USER_TEMPLATE = (
     '{{"summary": "一句话摘要", '
     '"is_important": true/false, '
     '"category": "work|personal|promo|notification", '
+    '"needs_reply": true/false, '
     '"suggested_action": "reply|archive|skip"}}\n\n'
     "判断标准：\n"
     "- is_important=true：工作沟通、个人事务、紧急事项、明确需要用户回复或处理\n"
     "- is_important=false：广告、营销邮件、订阅通知、自动通知（密码重置确认这类）\n"
+    "- needs_reply=true：需要用户回复（工作沟通、朋友邀约、客户咨询）\n"
+    "- needs_reply=false：不需要回复（银行账单、订单通知、密码重置、noreply 类）\n"
     "- category 在四类中选一\n"
     "- suggested_action：reply（建议回复）、archive（直接归档）、skip（暂不处理）\n\n"
     "邮件内容：\n{body}"
@@ -75,6 +78,7 @@ class LLMClient:
                 is_important=True,
                 category="work",
                 suggested_action="reply",
+                needs_reply=True,
             )
 
     async def draft_reply(self, original_body: str, feedback: str | None = None) -> Draft:
@@ -149,7 +153,7 @@ def _extract_json(text: str) -> dict:
 
 
 def _validate_summary(data: dict) -> Summary:
-    for key in ("summary", "is_important", "category", "suggested_action"):
+    for key in ("summary", "is_important", "category", "suggested_action", "needs_reply"):
         if key not in data:
             raise ValueError(f"summary missing field: {key}")
     if data["category"] not in CATEGORIES:
@@ -158,11 +162,14 @@ def _validate_summary(data: dict) -> Summary:
         raise ValueError(f"invalid suggested_action: {data['suggested_action']!r}")
     if not isinstance(data["is_important"], bool):
         raise ValueError("is_important must be bool")
+    if not isinstance(data["needs_reply"], bool):
+        raise ValueError("needs_reply must be bool")
     return Summary(
         text=str(data["summary"]),
         is_important=data["is_important"],
         category=data["category"],
         suggested_action=data["suggested_action"],
+        needs_reply=data["needs_reply"],
     )
 
 

@@ -84,6 +84,7 @@ async def notify_summary_node(
         "summary": summary.text,
         "body_text": email.body_text,
         "suggested_action": summary.suggested_action,
+        "needs_reply": summary.needs_reply,
     }
     await push_callback("summary", payload)
     return {}

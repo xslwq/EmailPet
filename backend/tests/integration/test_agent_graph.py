@@ -41,7 +41,7 @@ async def test_silent_archive_path(sample_email, push_cb):
     llm = MagicMock()
     llm.summarize = AsyncMock(
         return_value=Summary(
-            text="ad", is_important=False, category="promo", suggested_action="archive"
+            text="ad", is_important=False, category="promo", suggested_action="archive", needs_reply=False
         )
     )
     tools = MagicMock()
@@ -69,6 +69,7 @@ async def test_important_path_pauses_at_interrupt(sample_email, push_cb):
             is_important=True,
             category="work",
             suggested_action="reply",
+            needs_reply=True,
         )
     )
     tools = MagicMock()
@@ -90,7 +91,7 @@ async def test_summarize_consumes_pending_email(sample_email, push_cb):
     llm = MagicMock()
     llm.summarize = AsyncMock(
         return_value=Summary(
-            text="x", is_important=False, category="promo", suggested_action="archive"
+            text="x", is_important=False, category="promo", suggested_action="archive", needs_reply=False
         )
     )
     tools = MagicMock()
@@ -109,7 +110,7 @@ async def test_intent_archive_path(sample_email, push_cb):
     llm = MagicMock()
     llm.summarize = AsyncMock(
         return_value=Summary(
-            text="x", is_important=True, category="work", suggested_action="archive"
+            text="x", is_important=True, category="work", suggested_action="archive", needs_reply=False
         )
     )
     tools = MagicMock()
@@ -133,7 +134,7 @@ async def test_full_reply_flow(sample_email, push_cb):
     llm = MagicMock()
     llm.summarize = AsyncMock(
         return_value=Summary(
-            text="x", is_important=True, category="work", suggested_action="reply"
+            text="x", is_important=True, category="work", suggested_action="reply", needs_reply=True
         )
     )
     llm.draft_reply = AsyncMock(return_value=Draft(body="OK", reason="ack"))
@@ -169,7 +170,7 @@ async def test_modify_loop(sample_email, push_cb):
     llm = MagicMock()
     llm.summarize = AsyncMock(
         return_value=Summary(
-            text="x", is_important=True, category="work", suggested_action="reply"
+            text="x", is_important=True, category="work", suggested_action="reply", needs_reply=True
         )
     )
     llm.draft_reply = AsyncMock(

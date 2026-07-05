@@ -39,14 +39,14 @@ def sample_email():
 @pytest.fixture
 def important_summary():
     return Summary(
-        text="老板让交方案", is_important=True, category="work", suggested_action="reply"
+        text="老板让交方案", is_important=True, category="work", suggested_action="reply", needs_reply=True
     )
 
 
 @pytest.fixture
 def unimportant_summary():
     return Summary(
-        text="广告", is_important=False, category="promo", suggested_action="archive"
+        text="广告", is_important=False, category="promo", suggested_action="archive", needs_reply=False
     )
 
 

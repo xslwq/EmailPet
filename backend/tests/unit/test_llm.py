@@ -26,32 +26,35 @@ def patched_llm(monkeypatch):
 
 async def test_summarize_important(patched_llm):
     client, _ = patched_llm([
-        '{"summary": "老板让你周三交方案", "is_important": true, "category": "work", "suggested_action": "reply"}'
+        '{"summary": "老板让你周三交方案", "is_important": true, "category": "work", "needs_reply": true, "suggested_action": "reply"}'
     ])
     s = await client.summarize("hi")
     assert isinstance(s, Summary)
     assert s.is_important is True
     assert s.category == "work"
     assert s.suggested_action == "reply"
+    assert s.needs_reply is True
     assert "周三" in s.text
 
 
 async def test_summarize_not_important(patched_llm):
     client, _ = patched_llm([
-        '{"summary": "推广", "is_important": false, "category": "promo", "suggested_action": "archive"}'
+        '{"summary": "推广", "is_important": false, "category": "promo", "needs_reply": false, "suggested_action": "archive"}'
     ])
     s = await client.summarize("hi")
     assert s.is_important is False
     assert s.category == "promo"
+    assert s.needs_reply is False
 
 
 async def test_summarize_bad_json_retry_then_succeed(patched_llm):
     client, mock = patched_llm([
         "not json at all",
-        '{"summary": "ok", "is_important": true, "category": "work", "suggested_action": "reply"}',
+        '{"summary": "ok", "is_important": true, "category": "work", "needs_reply": true, "suggested_action": "reply"}',
     ])
     s = await client.summarize("hi")
     assert s.text == "ok"
+    assert s.needs_reply is True
     assert mock.await_count == 2
 
 
@@ -66,11 +69,12 @@ async def test_summarize_retry_exhausted_falls_back_important(patched_llm):
 
 async def test_summarize_invalid_category_falls_back(patched_llm):
     client, _ = patched_llm([
-        '{"summary": "x", "is_important": true, "category": "invalid_cat", "suggested_action": "reply"}',
-        '{"summary": "x", "is_important": true, "category": "still_bad", "suggested_action": "reply"}',
+        '{"summary": "x", "is_important": true, "category": "invalid_cat", "needs_reply": true, "suggested_action": "reply"}',
+        '{"summary": "x", "is_important": true, "category": "still_bad", "needs_reply": true, "suggested_action": "reply"}',
     ])
     s = await client.summarize("hi")
     assert s.is_important is True  # fallback
+    assert s.needs_reply is True
 
 
 async def test_draft_reply_success(patched_llm):
@@ -104,9 +108,10 @@ async def test_draft_reply_retry_exhausted_raises(patched_llm):
 
 async def test_extract_json_handles_markdown_fence():
     """LLMs often wrap JSON in ```json ... ```."""
-    text = '```json\n{"summary": "x", "is_important": true, "category": "work", "suggested_action": "reply"}\n```'
+    text = '```json\n{"summary": "x", "is_important": true, "category": "work", "needs_reply": true, "suggested_action": "reply"}\n```'
     data = _extract_json(text)
     assert data["category"] == "work"
+    assert data["needs_reply"] is True
 
 
 async def test_extract_json_handles_plain_fence():
@@ -129,7 +134,7 @@ async def test_truncate_over_limit():
 
 async def test_summarize_truncates_long_body(patched_llm):
     client, mock = patched_llm([
-        '{"summary": "x", "is_important": false, "category": "promo", "suggested_action": "archive"}'
+        '{"summary": "x", "is_important": false, "category": "promo", "needs_reply": false, "suggested_action": "archive"}'
     ])
     big_body = "x" * (MAX_BODY_CHARS_FOR_LLM + 5_000)
     await client.summarize(big_body)

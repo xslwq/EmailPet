@@ -32,6 +32,7 @@ class Summary:
     is_important: bool
     category: Category
     suggested_action: SuggestedAction
+    needs_reply: bool
 
 
 @dataclass(frozen=True)
