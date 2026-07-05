@@ -310,3 +310,53 @@ def test_route_decision_reject_routes_to_notify():
 
 def test_route_decision_unset_routes_to_notify():
     assert route_decision({}) == "notify_reject"
+
+
+# ---------------- Task 8: summarize writes emails_store, notify builds index ----------------
+
+
+async def test_summarize_node_writes_emails_store(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    store = EmailsStore(tmp_path / "emails.db")
+    llm = MagicMock()
+    llm.summarize = AsyncMock(return_value=important_summary)
+    state = {"pending_emails": [sample_email]}
+    await summarize_node(state, llm, push_cb, emails_store=store)
+    row = store.get_by_uid(42)
+    assert row is not None
+    assert row["summary"] == "老板让交方案"
+    assert row["is_important"] is True
+    assert row["needs_reply"] is True
+
+
+async def test_notify_summary_builds_vector_index(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.storage.emails_store import EmailsStore
+    from emailpet.storage.email_vec_store import EmailVecStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, important_summary)
+    vec_store = EmailVecStore(tmp_path / "vec.db", dimensions=4)
+    embedding_client = MagicMock()
+    embedding_client.embed = AsyncMock(return_value=[0.1, 0.2, 0.3, 0.4])
+    state = {"current_email": sample_email, "current_summary": important_summary}
+    await notify_summary_node(state, push_cb, emails_store=store, email_vec_store=vec_store, embedding_client=embedding_client)
+    results = vec_store.query([0.1, 0.2, 0.3, 0.4], k=1)
+    assert results == [42]
+    row = store.get_by_uid(42)
+    assert row["indexed_at"] is not None
+    push_cb.assert_awaited()
+
+
+async def test_notify_summary_embedding_failure_does_not_block(sample_email, important_summary, push_cb, tmp_path):
+    from emailpet.agent.embedding import EmbeddingError
+    from emailpet.storage.emails_store import EmailsStore
+    from emailpet.storage.email_vec_store import EmailVecStore
+    store = EmailsStore(tmp_path / "emails.db")
+    store.upsert(sample_email, important_summary)
+    vec_store = EmailVecStore(tmp_path / "vec.db", dimensions=4)
+    embedding_client = MagicMock()
+    embedding_client.embed = AsyncMock(side_effect=EmbeddingError("api dead"))
+    state = {"current_email": sample_email, "current_summary": important_summary}
+    await notify_summary_node(state, push_cb, emails_store=store, email_vec_store=vec_store, embedding_client=embedding_client)
+    push_cb.assert_awaited()
+    row = store.get_by_uid(42)
+    assert row["indexed_at"] is None

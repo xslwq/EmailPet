@@ -26,14 +26,17 @@ async def summarize_node(
     state: AgentState,
     llm: LLMClient,
     push_callback: PushCallback,
+    emails_store: Any = None,
 ) -> dict[str, Any]:
-    """Pop pending_emails[0], summarize via LLM, write to state."""
+    """Pop pending_emails[0], summarize via LLM, write to state and emails_store."""
     pending = list(state.get("pending_emails", []))
     if not pending:
         logger.warning("summarize_node called with empty pending_emails")
         return {}
     email = pending[0]
     summary = await llm.summarize(email.body_text)
+    if emails_store is not None:
+        emails_store.upsert(email, summary)
     return {
         "current_email": email,
         "current_summary": summary,
@@ -65,9 +68,12 @@ async def silent_archive_node(
 async def notify_summary_node(
     state: AgentState,
     push_callback: PushCallback,
+    emails_store: Any = None,
+    email_vec_store: Any = None,
+    embedding_client: Any = None,
     thread_id: str | None = None,
 ) -> dict[str, Any]:
-    """Push the summary event to the user via WebSocket. State unchanged."""
+    """Push the summary event to the user via WebSocket, then build vector index. State unchanged."""
     email = state.get("current_email")
     summary = state.get("current_summary")
     if email is None or summary is None:
@@ -87,6 +93,14 @@ async def notify_summary_node(
         "needs_reply": summary.needs_reply,
     }
     await push_callback("summary", payload)
+    if embedding_client is not None and email_vec_store is not None and emails_store is not None:
+        try:
+            doc = f"{email.subject}\n{email.body_text}\n{summary.text}"
+            embedding = await embedding_client.embed(doc)
+            email_vec_store.index(email.uid, embedding)
+            emails_store.mark_indexed(email.uid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("vector index build failed for uid=%s: %s", email.uid, e)
     return {}
 
 

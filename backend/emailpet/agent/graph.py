@@ -30,7 +30,10 @@ from emailpet.agent.nodes import (
 from emailpet.agent.profile_update import profile_update_node
 from emailpet.agent.state import AgentState
 from emailpet.agent.tools import AgentTools
+from emailpet.agent.embedding import EmbeddingClient
 from emailpet.storage.archive_log import ArchiveLog
+from emailpet.storage.email_vec_store import EmailVecStore
+from emailpet.storage.emails_store import EmailsStore
 from emailpet.storage.user_profile_store import UserProfileStore
 
 PushCallback = Callable[[str, dict[str, Any]], Awaitable[None]]
@@ -42,6 +45,9 @@ def build_workflow(
     archive_log: ArchiveLog,
     profile_store: UserProfileStore,
     push_callback: PushCallback,
+    emails_store: EmailsStore | None = None,
+    email_vec_store: EmailVecStore | None = None,
+    embedding_client: EmbeddingClient | None = None,
 ) -> StateGraph:
     """Build (but do not compile) the agent StateGraph.
 
@@ -55,7 +61,7 @@ def build_workflow(
     # `state`; partial turns each multi-arg node into a state-only callable.
     workflow.add_node(
         "summarize",
-        partial(summarize_node, llm=llm, push_callback=push_callback),
+        partial(summarize_node, llm=llm, push_callback=push_callback, emails_store=emails_store),
     )
     workflow.add_node(
         "silent_archive",
@@ -63,7 +69,7 @@ def build_workflow(
     )
     workflow.add_node(
         "notify_summary",
-        partial(notify_summary_node, push_callback=push_callback),
+        partial(notify_summary_node, push_callback=push_callback, emails_store=emails_store, email_vec_store=email_vec_store, embedding_client=embedding_client),
     )
     workflow.add_node("wait_intent", wait_intent_node)
     workflow.add_node(
@@ -138,6 +144,9 @@ async def build_agent(
     profile_store: UserProfileStore,
     push_callback: PushCallback,
     checkpoint_path: str | Path,
+    emails_store: EmailsStore | None = None,
+    email_vec_store: EmailVecStore | None = None,
+    embedding_client: EmbeddingClient | None = None,
 ):
     """Build, compile, and return a runnable LangGraph agent with persistence.
 
@@ -149,7 +158,7 @@ async def build_agent(
         (compiled_agent, saver_cm) — caller must `await saver_cm.__aexit__(None, None, None)`
         when done (typically at process shutdown).
     """
-    workflow = build_workflow(llm, tools, archive_log, profile_store, push_callback)
+    workflow = build_workflow(llm, tools, archive_log, profile_store, push_callback, emails_store, email_vec_store, embedding_client)
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     saver_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
     saver = await saver_cm.__aenter__()

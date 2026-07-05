@@ -37,6 +37,9 @@ CHECKPOINT_DB = STORAGE_DIR / "checkpoint.db"
 UID_DB = STORAGE_DIR / "uid_store.db"
 ARCHIVE_DB = STORAGE_DIR / "archives.db"
 PROFILE_DB = STORAGE_DIR / "profile.db"
+EMAILS_DB = STORAGE_DIR / "emails.db"
+VEC_DB = STORAGE_DIR / "vec.db"
+EMBEDDING_DIM = 1536
 
 
 class AppContext:
@@ -51,6 +54,9 @@ class AppContext:
         self.archive_log: Optional[ArchiveLog] = None
         self.uid_store: Optional[UIDStore] = None
         self.profile_store: Optional[UserProfileStore] = None
+        self.emails_store = None
+        self.email_vec_store = None
+        self.embedding_client = None
         self.manager: Optional[ConnectionManager] = None
         self.agent = None
         self.saver_cm = None
@@ -58,6 +64,9 @@ class AppContext:
 
 
 def _build_context(config_path: Path) -> AppContext:
+    from emailpet.agent.embedding import EmbeddingClient
+    from emailpet.storage.emails_store import EmailsStore
+    from emailpet.storage.email_vec_store import EmailVecStore
     ctx = AppContext()
     ctx.config = Config.from_yaml(config_path)
     ctx.imap = IMAPClient(
@@ -75,6 +84,16 @@ def _build_context(config_path: Path) -> AppContext:
     ctx.archive_log = ArchiveLog(ARCHIVE_DB)
     ctx.uid_store = UIDStore(UID_DB)
     ctx.profile_store = UserProfileStore(PROFILE_DB)
+    ctx.emails_store = EmailsStore(EMAILS_DB)
+    ctx.email_vec_store = EmailVecStore(VEC_DB, dimensions=EMBEDDING_DIM)
+    if ctx.config.embedding is not None:
+        ctx.embedding_client = EmbeddingClient(
+            ctx.config.embedding.base_url,
+            ctx.config.embedding.api_key,
+            ctx.config.embedding.model,
+        )
+    else:
+        ctx.embedding_client = None
     ctx.manager = ConnectionManager()
     return ctx
 
@@ -124,6 +143,9 @@ async def lifespan(app: FastAPI):
         profile_store=ctx.profile_store,
         push_callback=ctx.manager.push,
         checkpoint_path=CHECKPOINT_DB,
+        emails_store=ctx.emails_store,
+        email_vec_store=ctx.email_vec_store,
+        embedding_client=ctx.embedding_client,
     )
     # Start poll loop in background
     ctx.poll_task = asyncio.create_task(poll_loop(ctx))

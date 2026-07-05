@@ -28,9 +28,9 @@ def push_cb():
     return AsyncMock()
 
 
-def make_agent(llm, tools, archive_log, profile_store, push_cb):
+def make_agent(llm, tools, archive_log, profile_store, push_cb, emails_store=None, email_vec_store=None, embedding_client=None):
     """Build a workflow and compile with an in-memory checkpointer for tests."""
-    workflow = build_workflow(llm, tools, archive_log, profile_store, push_cb)
+    workflow = build_workflow(llm, tools, archive_log, profile_store, push_cb, emails_store, email_vec_store, embedding_client)
     return workflow.compile(
         checkpointer=InMemorySaver(),
         interrupt_before=["wait_intent", "wait_decision"],
