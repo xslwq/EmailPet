@@ -14,6 +14,7 @@ from typing import Optional
 import uvicorn
 from fastapi import FastAPI
 
+from emailpet.agent.embedding import EmbeddingClient
 from emailpet.agent.graph import build_agent
 from emailpet.agent.llm import LLMClient
 from emailpet.agent.tools import AgentTools
@@ -21,6 +22,8 @@ from emailpet.config import Config
 from emailpet.mail.imap_client import IMAPClient
 from emailpet.mail.smtp_client import SMTPClient
 from emailpet.storage.archive_log import ArchiveLog
+from emailpet.storage.emails_store import EmailsStore
+from emailpet.storage.email_vec_store import EmailVecStore
 from emailpet.storage.uid_store import UIDStore
 from emailpet.storage.user_profile_store import UserProfileStore
 from emailpet.ws import ConnectionManager, make_app
@@ -54,9 +57,9 @@ class AppContext:
         self.archive_log: Optional[ArchiveLog] = None
         self.uid_store: Optional[UIDStore] = None
         self.profile_store: Optional[UserProfileStore] = None
-        self.emails_store = None
-        self.email_vec_store = None
-        self.embedding_client = None
+        self.emails_store: Optional[EmailsStore] = None
+        self.email_vec_store: Optional[EmailVecStore] = None
+        self.embedding_client: Optional[EmbeddingClient] = None
         self.manager: Optional[ConnectionManager] = None
         self.agent = None
         self.saver_cm = None
@@ -64,9 +67,6 @@ class AppContext:
 
 
 def _build_context(config_path: Path) -> AppContext:
-    from emailpet.agent.embedding import EmbeddingClient
-    from emailpet.storage.emails_store import EmailsStore
-    from emailpet.storage.email_vec_store import EmailVecStore
     ctx = AppContext()
     ctx.config = Config.from_yaml(config_path)
     ctx.imap = IMAPClient(
