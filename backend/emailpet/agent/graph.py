@@ -49,16 +49,28 @@ def build_workflow(
     email_vec_store: EmailVecStore | None = None,
     embedding_client: EmbeddingClient | None = None,
 ) -> StateGraph:
-    """Build (but do not compile) the agent StateGraph.
+    """构建（但不编译）agent StateGraph。
 
-    Compile separately with a checkpointer (and the appropriate
-    interrupt_before list) — tests use an InMemorySaver, production uses
-    AsyncSqliteSaver.
+    单独编译时添加 checkpointer 和 interrupt_before 列表——测试用 InMemorySaver，
+    生产环境用 AsyncSqliteSaver。
+
+    Args:
+        llm: LLM 客户端
+        tools: 邮件操作工具
+        archive_log: 归档日志
+        profile_store: 用户画像存储
+        push_callback: WebSocket 推送回调
+        emails_store: 邮件存储（可选）
+        email_vec_store: 向量索引存储（可选）
+        embedding_client: 嵌入模型客户端（可选）
+
+    Returns:
+        配置好节点和边的 StateGraph（未编译）
     """
     workflow: StateGraph = StateGraph(AgentState)
 
-    # Inject dependencies via partial. LangGraph nodes are invoked with just
-    # `state`; partial turns each multi-arg node into a state-only callable.
+    # 通过 partial 注入依赖。LangGraph 节点只用 `state` 调用；
+    # partial 将多参数节点转换为仅接受 state 的可调用对象。
     workflow.add_node(
         "summarize",
         partial(summarize_node, llm=llm, push_callback=push_callback, emails_store=emails_store),
@@ -128,6 +140,7 @@ def build_workflow(
             "notify_reject": "notify_reject",
         },
     )
+    # profile_update 后回到 draft_reply 重新生成草稿，形成修改循环
     workflow.add_edge("profile_update", "draft_reply")
     workflow.add_edge("execute_reply", END)
     workflow.add_edge("execute_archive", END)
@@ -148,20 +161,32 @@ async def build_agent(
     email_vec_store: EmailVecStore | None = None,
     embedding_client: EmbeddingClient | None = None,
 ):
-    """Build, compile, and return a runnable LangGraph agent with persistence.
+    """构建、编译并返回带持久化的可运行 LangGraph agent。
 
-    `AsyncSqliteSaver.from_conn_string` is an asynccontextmanager — we enter
-    it here and return both the agent and the context manager so the caller
-    can `__aexit__` it on shutdown.
+    `AsyncSqliteSaver.from_conn_string` 是 asynccontextmanager——我们在这里进入它，
+    同时返回 agent 和 context manager，让调用者在关闭时可以 `__aexit__`。
+
+    Args:
+        llm: LLM 客户端
+        tools: 邮件操作工具
+        archive_log: 归档日志
+        profile_store: 用户画像存储
+        push_callback: WebSocket 推送回调
+        checkpoint_path: checkpoint 数据库文件路径
+        emails_store: 邮件存储（可选）
+        email_vec_store: 向量索引存储（可选）
+        embedding_client: 嵌入模型客户端（可选）
 
     Returns:
-        (compiled_agent, saver_cm) — caller must `await saver_cm.__aexit__(None, None, None)`
-        when done (typically at process shutdown).
+        (compiled_agent, saver_cm) — 调用者完成后必须
+        `await saver_cm.__aexit__(None, None, None)`（通常在进程关闭时）
     """
     workflow = build_workflow(llm, tools, archive_log, profile_store, push_callback, emails_store, email_vec_store, embedding_client)
+    # 确保 checkpoint 目录存在
     Path(checkpoint_path).parent.mkdir(parents=True, exist_ok=True)
     saver_cm = AsyncSqliteSaver.from_conn_string(str(checkpoint_path))
     saver = await saver_cm.__aenter__()
+    # 设置两个中断点：等待用户意图、等待草稿决定
     agent = workflow.compile(
         checkpointer=saver,
         interrupt_before=["wait_intent", "wait_decision"],

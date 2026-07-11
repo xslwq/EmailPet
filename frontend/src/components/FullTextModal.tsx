@@ -1,3 +1,9 @@
+/**
+ * 邮件全文弹窗组件
+ * 职责：显示完整邮件内容的模态框
+ */
+
+/** 完整邮件数据结构 */
 interface EmailFull {
   from_name: string
   from_address: string
@@ -6,6 +12,7 @@ interface EmailFull {
   body_text: string
 }
 
+/** FullTextModal 组件属性 */
 interface FullTextModalProps {
   visible: boolean
   email: EmailFull | null
@@ -62,10 +69,17 @@ const styles = {
   } as React.CSSProperties,
 }
 
+/**
+ * 邮件全文弹窗组件
+ * @param visible - 是否显示
+ * @param email - 邮件数据
+ * @param onClose - 关闭回调
+ */
 export function FullTextModal({ visible, email, onClose }: FullTextModalProps) {
   if (!visible || !email) return null
   return (
     <div style={styles.overlay} onClick={onClose}>
+      {/* 点击遮罩层关闭，点击弹窗内部不关闭 */}
       <div style={{ position: 'relative', ...styles.modal }} onClick={(e) => e.stopPropagation()}>
         <button style={styles.closeBtn} onClick={onClose} aria-label="关闭">
           ✕

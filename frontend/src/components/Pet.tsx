@@ -1,8 +1,15 @@
+/**
+ * 桌宠动画组件
+ * 职责：根据状态显示不同的 emoji 和动画（idle/thinking/speaking）
+ */
+
+/** Pet 组件属性 */
 interface PetProps {
   state: 'idle' | 'thinking' | 'speaking'
   onClick?: () => void
 }
 
+/** 状态对应的 emoji */
 const emojiByState: Record<PetProps['state'], string> = {
   idle: '🐱',
   thinking: '🤔',
@@ -25,7 +32,13 @@ const styles = {
   } as React.CSSProperties,
 }
 
+/**
+ * 桌宠组件
+ * @param state - 桌宠状态
+ * @param onClick - 点击回调
+ */
 export function Pet({ state, onClick }: PetProps) {
+  // 根据状态选择动画：思考时弹跳，说话时缩放
   const animation =
     state === 'thinking'
       ? 'pet-bounce 0.9s ease-in-out infinite'

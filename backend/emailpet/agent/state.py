@@ -10,10 +10,10 @@ from emailpet.mail.models import Draft, Email, Summary
 
 
 class AgentState(TypedDict, total=False):
-    """Per-email agent state. One thread_id per email UID.
+    """每封邮件的 agent state。每个 email UID 对应一个 thread_id。
 
-    All fields are optional in practice (TypedDict total=False) because
-    the graph populates them progressively as nodes execute.
+    所有字段都是可选的（TypedDict total=False），因为图在节点执行过程中
+    逐步填充这些字段。
     """
 
     pending_emails: list[Email]

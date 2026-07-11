@@ -13,6 +13,7 @@ import yaml
 
 @dataclass(frozen=True)
 class IMAPConfig:
+    """IMAP 服务器配置，用于收取邮件。"""
     host: str
     port: int
     username: str
@@ -21,6 +22,7 @@ class IMAPConfig:
 
 @dataclass(frozen=True)
 class SMTPConfig:
+    """SMTP 服务器配置，用于发送邮件。"""
     host: str
     port: int
     username: str
@@ -29,6 +31,7 @@ class SMTPConfig:
 
 @dataclass(frozen=True)
 class LLMConfig:
+    """大语言模型 API 配置。"""
     base_url: str
     api_key: str
     model: str
@@ -36,12 +39,14 @@ class LLMConfig:
 
 @dataclass(frozen=True)
 class ServerConfig:
+    """WebSocket 服务器配置。"""
     ws_host: str = "127.0.0.1"
     ws_port: int = 8765
 
 
 @dataclass(frozen=True)
 class EmbeddingConfig:
+    """嵌入模型 API 配置（可选）。"""
     base_url: str
     api_key: str
     model: str
@@ -49,6 +54,7 @@ class EmbeddingConfig:
 
 @dataclass(frozen=True)
 class Config:
+    """EmailPet 根配置对象，聚合所有子配置。"""
     imap: IMAPConfig
     smtp: SMTPConfig
     llm: LLMConfig
@@ -58,6 +64,18 @@ class Config:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "Config":
+        """从 YAML 文件加载配置。
+
+        参数：
+            path: YAML 文件路径
+
+        返回：
+            解析后的 Config 实例
+
+        异常：
+            FileNotFoundError: 文件不存在
+            ValueError: YAML 格式错误或配置结构无效
+        """
         p = Path(path)
         if not p.is_file():
             raise FileNotFoundError(f"Config file not found: {p}")
@@ -73,6 +91,12 @@ class Config:
 
     @classmethod
     def _from_dict(cls, data: dict[str, Any]) -> "Config":
+        """从字典构建 Config 实例（内部解析流程）。
+
+        解析顺序：
+        1. 必需：mail.imap / mail.smtp / llm
+        2. 可选：server / embedding / poll_interval_seconds
+        """
         mail = _require_mapping(data, "mail")
         imap_data = _require_mapping(mail, "imap", path="mail")
         smtp_data = _require_mapping(mail, "smtp", path="mail")
@@ -92,6 +116,7 @@ class Config:
                 )
         server = ServerConfig(**server_kwargs)
 
+        # embedding 是可选配置，无此字段时返回 None
         embedding: Optional[EmbeddingConfig] = None
         if "embedding" in data:
             emb_data = _require_mapping(data, "embedding")
@@ -114,15 +139,25 @@ class Config:
 
 
 def _require(data: dict, key: str, path: str | None = None) -> None:
+    """检查字典中是否存在指定键，不存在则抛 ValueError。"""
     if key not in data:
         full = f"{path}.{key}" if path else key
         raise ValueError(f"Missing required config field: {full}")
 
 
 def _require_mapping(data: dict, key: str, path: str | None = None) -> dict:
-    """Require ``key`` to exist in ``data`` and to be a mapping (dict).
+    """要求键存在且值为 dict 类型（用于嵌套配置段校验）。
 
-    Raises ValueError with the full field path if missing or non-dict.
+    参数：
+        data: 父字典
+        key: 要检查的键
+        path: 用于错误信息的路径前缀
+
+    返回：
+        嵌套的 dict 值
+
+    异常：
+        ValueError: 键不存在或值不是 dict
     """
     _require(data, key, path=path)
     value = data[key]
@@ -135,6 +170,7 @@ def _require_mapping(data: dict, key: str, path: str | None = None) -> dict:
 
 
 def _build_mail(data: dict, kind: str) -> IMAPConfig | SMTPConfig:
+    """构建 IMAPConfig 或 SMTPConfig 实例。"""
     for f in ("host", "port", "username", "password"):
         if f not in data:
             raise ValueError(f"Missing required config field: mail.{kind}.{f}")
@@ -144,6 +180,7 @@ def _build_mail(data: dict, kind: str) -> IMAPConfig | SMTPConfig:
 
 
 def _build_llm(data: dict) -> LLMConfig:
+    """构建 LLMConfig 实例。"""
     for f in ("base_url", "api_key", "model"):
         if f not in data:
             raise ValueError(f"Missing required config field: llm.{f}")
@@ -151,6 +188,18 @@ def _build_llm(data: dict) -> LLMConfig:
 
 
 def _validate_port(port: Any, field_name: str) -> int:
+    """校验端口号必须在 1-65535 范围内。
+
+    参数：
+        port: 待校验的端口值
+        field_name: 用于错误信息的字段名
+
+    返回：
+        校验通过的整数端口
+
+    异常：
+        ValueError: 类型错误或超出范围
+    """
     if not isinstance(port, int) or port < 1 or port > 65535:
         raise ValueError(f"Invalid port for {field_name}: {port!r} (must be 1-65535)")
     return port

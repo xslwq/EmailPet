@@ -1,3 +1,7 @@
+/**
+ * EmailPet 根组件
+ * 职责：整体布局、桌宠动画状态管理、消息列表自动滚动、WebSocket 连接状态显示
+ */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bubble } from './components/Bubble'
 import { FullTextModal } from './components/FullTextModal'
@@ -5,6 +9,7 @@ import { Input } from './components/Input'
 import { Pet } from './components/Pet'
 import { useAgent } from './hooks/useAgent'
 
+/** 邮件全文弹窗数据结构 */
 interface FullTextEmail {
   from_name: string
   from_address: string
@@ -33,7 +38,7 @@ const styles = {
     cursor: 'move',
     userSelect: 'none',
     background: 'rgba(255,255,255,0.6)',
-    WebkitAppRegion: 'drag',
+    WebkitAppRegion: 'drag', // Electron 拖拽区域标记
   } as React.CSSProperties,
   scroll: {
     flex: 1,
@@ -66,14 +71,14 @@ export default function App() {
   const [fullTextEmail, setFullTextEmail] = useState<FullTextEmail | null>(null)
   const scrollRef = useRef<HTMLDivElement | null>(null)
 
-  // auto-scroll on new messages
+  // 新消息到达时自动滚动到底部
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight
     }
   }, [messages])
 
-  // pet state: "speaking" when a new message arrived in last 1.5s, else "idle"
+  // 桌宠状态：新消息后1.5秒内显示"speaking"，之后恢复"idle"
   const lastTs = messages.length > 0 ? messages[messages.length - 1].ts : 0
   const [petState, setPetState] = useState<'idle' | 'thinking' | 'speaking'>(
     'idle',

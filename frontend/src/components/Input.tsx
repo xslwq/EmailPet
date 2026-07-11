@@ -1,5 +1,10 @@
+/**
+ * 用户输入框组件
+ * 职责：接收用户文本输入，支持回车发送
+ */
 import { useState } from 'react'
 
+/** Input 组件属性 */
 interface InputProps {
   onSend: (text: string) => void
   disabled?: boolean
@@ -37,9 +42,16 @@ const styles = {
   } as React.CSSProperties,
 }
 
+/**
+ * 输入框组件
+ * @param onSend - 发送回调
+ * @param disabled - 是否禁用
+ * @param placeholder - 占位文本
+ */
 export function Input({ onSend, disabled = false, placeholder = '说点什么…' }: InputProps) {
   const [text, setText] = useState('')
 
+  /** 提交输入内容 */
   const submit = () => {
     const trimmed = text.trim()
     if (!trimmed) return

@@ -21,11 +21,11 @@ logger = logging.getLogger(__name__)
 
 
 class IMAPAuthError(Exception):
-    """IMAP authentication failed."""
+    """IMAP 认证失败。"""
 
 
 class IMAPCommandError(Exception):
-    """An IMAP command returned a non-OK response."""
+    """IMAP 命令返回非 OK 响应。"""
 
     def __init__(self, command: str, response: object) -> None:
         super().__init__(f"IMAP {command} failed: {response!r}")
@@ -34,6 +34,11 @@ class IMAPCommandError(Exception):
 
 
 class IMAPClient:
+    """异步 IMAP 客户端（基于 aioimaplib）。
+
+    职责：连接 IMAP 服务器、拉取新邮件、标记已读、归档。
+    用法：connect() 建立连接，poll() 拉取新邮件，archive() 归档邮件。
+    """
     def __init__(self, host: str, port: int, username: str, password: str) -> None:
         self.host = host
         self.port = port
@@ -42,6 +47,7 @@ class IMAPClient:
         self._client: Optional[aioimaplib.IMAP4_SSL] = None
 
     async def connect(self) -> None:
+        """建立 IMAP SSL 连接并登录（幂等）。"""
         if self._client is not None:
             return
         client = aioimaplib.IMAP4_SSL(host=self.host, port=self.port, timeout=30)
@@ -52,6 +58,7 @@ class IMAPClient:
         self._client = client
 
     async def close(self) -> None:
+        """登出并关闭连接（失败不抛异常）。"""
         if self._client is None:
             return
         try:
@@ -61,12 +68,14 @@ class IMAPClient:
         self._client = None
 
     async def poll(self, seen_uids: set[int]) -> tuple[list[Email], list[int]]:
-        """Fetch new UNSEEN emails not in ``seen_uids``.
+        """拉取 INBOX 中未读且未处理过的新邮件。
 
-        Returns ``(parsed_emails, processed_uids)``. ``processed_uids`` contains
-        both successfully parsed UIDs *and* UIDs whose fetch/parse failed —
-        callers are expected to mark all of them as seen so we don't re-fetch
-        broken UIDs forever.
+        返回：
+            (parsed_emails, processed_uids)
+            - parsed_emails: 成功解析的邮件列表
+            - processed_uids: 所有处理过的 UID（包括解析失败的，调用方应全部标记为已处理）
+
+        设计：解析失败的邮件也标记为已处理，避免无限重试损坏邮件。
         """
         await self.connect()
         assert self._client is not None
@@ -76,7 +85,7 @@ class IMAPClient:
         status, lines = await self._client.uid_search("UNSEEN")
         if status != "OK":
             raise IMAPCommandError("UID SEARCH", lines)
-        # lines[0] is e.g. b"1 2 3" or b""
+        # lines[0] 格式示例：b"1 2 3" 或 b""
         if not lines or not lines[0]:
             return [], []
         first = lines[0]
@@ -88,6 +97,7 @@ class IMAPClient:
                 uids.append(int(tok))
             except ValueError:
                 continue
+        # 过滤掉已处理过的 UID
         new_uids = [u for u in uids if u not in seen_uids]
         out: list[Email] = []
         processed: list[int] = []
@@ -98,11 +108,12 @@ class IMAPClient:
                 processed.append(uid)
             except Exception:
                 logger.warning("failed to fetch/parse uid=%s", uid, exc_info=True)
-                # Still mark as processed so caller doesn't re-attempt forever.
+                # 解析失败也标记为已处理，避免无限重试
                 processed.append(uid)
         return out, processed
 
     async def _fetch_one(self, uid: int) -> Email:
+        """拉取单封邮件的完整 RFC822 内容并解析。"""
         assert self._client is not None
         status, lines = await self._client.uid("FETCH", str(uid), "(RFC822)")
         if status != "OK":
@@ -112,6 +123,10 @@ class IMAPClient:
         return _parse_email(uid, msg)
 
     async def archive(self, uid: int) -> None:
+        """归档邮件：COPY 到 Archive 文件夹 + 删除原邮件。
+
+        降级策略：Archive 文件夹不存在时，仅标记为已读。
+        """
         await self.connect()
         assert self._client is not None
         status, _ = await self._client.uid("COPY", str(uid), "Archive")
@@ -120,8 +135,7 @@ class IMAPClient:
                 "STORE", str(uid), "+FLAGS (\\Deleted)"
             )
             if store_status != "OK":
-                # COPY already duplicated the message; surface the failure
-                # rather than silently leaving a duplicate in INBOX.
+                # COPY 已成功，若标记删除失败则抛异常（避免 INBOX 留重复）
                 raise IMAPCommandError("UID STORE", store_resp)
             expunge_status, expunge_resp = await self._client.expunge()
             if expunge_status != "OK":
@@ -131,17 +145,18 @@ class IMAPClient:
             await self._client.uid("STORE", str(uid), "+FLAGS (\\Seen)")
 
     async def mark_read(self, uid: int) -> None:
+        """标记邮件为已读。"""
         await self.connect()
         assert self._client is not None
         await self._client.uid("STORE", str(uid), "+FLAGS (\\Seen)")
 
 
 def _extract_raw(lines: list) -> bytes:
-    """aioimaplib FETCH returns mixed framing + content lines.
+    """从 aioimaplib FETCH 响应中提取原始邮件内容。
 
-    Find the bytes chunk that's the raw email — heuristic: contains headers
-    (Date/From/Subject) or a header/body separator (\\r\\n\\r\\n). Pick the largest
-    matching candidate. Falls back to the largest bytes blob.
+    aioimaplib 返回混合格式（帧 + 内容），启发式识别：
+    - 包含头部特征（From/Subject）或头部分隔符（\r\n\r\n）
+    - 取最大的匹配块
     """
     candidates = [
         x for x in lines
@@ -155,6 +170,7 @@ def _extract_raw(lines: list) -> bytes:
 
 
 def _decode_header_value(value: str | None) -> str:
+    """解码邮件头（处理多编码、encoded-word 格式）。"""
     if not value:
         return ""
     parts = decode_header(value)
@@ -171,11 +187,13 @@ def _decode_header_value(value: str | None) -> str:
 
 
 def _is_attachment(part: Message) -> bool:
+    """判断 MIME 部分是否为附件。"""
     disp = (part.get("Content-Disposition") or "").lower()
     return "attachment" in disp
 
 
 def _decode_payload(part: Message) -> str:
+    """解码 MIME 部分的 payload（处理 Content-Transfer-Encoding）。"""
     raw = part.get_payload(decode=True) or b""
     charset = part.get_content_charset() or "utf-8"
     try:
@@ -185,11 +203,13 @@ def _decode_payload(part: Message) -> str:
 
 
 def _extract_text(msg: Message) -> str:
+    """从邮件中提取纯文本（优先 text/plain，降级 text/html）。"""
     if msg.is_multipart():
-        # prefer text/plain
+        # 优先 text/plain
         for part in msg.walk():
             if part.get_content_type() == "text/plain" and not _is_attachment(part):
                 return _decode_payload(part)
+        # 无 plain 时用 html 转纯文本
         for part in msg.walk():
             if part.get_content_type() == "text/html" and not _is_attachment(part):
                 html = _decode_payload(part)
@@ -203,6 +223,7 @@ def _extract_text(msg: Message) -> str:
 
 
 def _parse_email(uid: int, msg: Message) -> Email:
+    """解析原始邮件为 Email 对象。"""
     raw_from = msg.get("From") or ""
     decoded_from = _decode_header_value(raw_from)
     name, address = parseaddr(decoded_from)
@@ -215,10 +236,10 @@ def _parse_email(uid: int, msg: Message) -> Email:
         except (TypeError, ValueError):
             received_at = None
     if received_at is None:
+        # 日期无效或缺失时用当前时间
         received_at = datetime.now(timezone.utc)
     elif received_at.tzinfo is None:
-        # RFC 5322 allows dates without timezone offset; assume UTC so downstream
-        # comparisons against tz-aware datetimes don't blow up.
+        # RFC 5322 允许无时区日期，默认 UTC 避免与时区感知时间比较报错
         received_at = received_at.replace(tzinfo=timezone.utc)
     body_text = _extract_text(msg)
     return Email(

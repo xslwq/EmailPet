@@ -1,9 +1,13 @@
+/**
+ * Electron 主进程
+ * 职责：创建窗口、启动 Python 后端、处理窗口拖拽、后端崩溃重启
+ */
 import { app, BrowserWindow, dialog, ipcMain, Menu } from 'electron'
 import { spawn, type ChildProcess } from 'node:child_process'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-// ESM-compat __dirname
+// ESM 兼容的 __dirname
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -12,8 +16,11 @@ let pythonProcess: ChildProcess | null = null
 let crashCount = 0
 let intentionalQuit = false
 
+/**
+ * 创建应用窗口
+ * WSLg 下 transparent 窗口经常完全不可见；用 frame=false + 不透明背景做"圆角浮窗"效果
+ */
 function createWindow() {
-  // WSLg 下 transparent 窗口经常完全不可见；用 has_frame=false + 不透明背景做"圆角浮窗"效果。
   const useTransparent = process.platform === 'darwin' || process.env.EMAILPET_TRANSPARENT === '1'
   mainWindow = new BrowserWindow({
     width: 380,
@@ -37,7 +44,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'))
   }
 
-  // Drag handling: renderer reports mouse positions; main moves the window.
+  // 拖拽处理：渲染进程报告鼠标位置，主进程移动窗口
   let dragging = false
   let dragStartScreenPos = { x: 0, y: 0 }
   let dragStartWindowPos: [number, number] = [0, 0]
@@ -61,7 +68,7 @@ function createWindow() {
     dragging = false
   })
 
-  // Right-click context menu
+  // 右键菜单
   mainWindow.webContents.on('context-menu', () => {
     const menu = Menu.buildFromTemplate([
       {
@@ -76,6 +83,10 @@ function createWindow() {
   })
 }
 
+/**
+ * 启动 Python 后端
+ * 支持后端崩溃自动重启，连续崩溃 3 次后停止并提示用户
+ */
 function startPythonBackend() {
   const backendCwd = path.resolve(__dirname, '../../backend')
   const command =
@@ -110,8 +121,7 @@ function startPythonBackend() {
 }
 
 app.whenReady().then(() => {
-  // In dev, set EMAILPET_NO_SPAWN=1 to skip auto-starting the backend
-  // (you're already running `python -m emailpet.main` manually).
+  // 开发模式下设置 EMAILPET_NO_SPAWN=1 可跳过自动启动后端（手动运行后端）
   if (!process.env.EMAILPET_NO_SPAWN) {
     startPythonBackend()
   }

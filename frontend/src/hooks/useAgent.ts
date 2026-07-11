@@ -1,9 +1,16 @@
+/**
+ * WebSocket 连接 Hook
+ * 职责：管理与后端的 WebSocket 连接、自动重连、消息收发
+ */
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useChatStore, type ChatPayload } from '../store/chat'
 
+/** WebSocket 服务地址 */
 const WS_URL = 'ws://127.0.0.1:8765/ws'
+/** 重连延迟（毫秒） */
 const RECONNECT_DELAY_MS = 2000
 
+/** 后端发来的 WebSocket 消息类型 */
 type ServerMessage =
   | {
       type: 'summary'
@@ -23,6 +30,11 @@ type ServerMessage =
   | { type: 'agent_say'; text: string }
   | { type: 'error'; code: string; message: string }
 
+/**
+ * 将后端消息转换为前端 Payload 格式
+ * @param msg - 后端消息
+ * @returns 前端 Payload 或 null（未知类型）
+ */
 function toPayload(msg: ServerMessage): ChatPayload | null {
   switch (msg.type) {
     case 'summary':
@@ -52,6 +64,10 @@ function toPayload(msg: ServerMessage): ChatPayload | null {
   }
 }
 
+/**
+ * Agent WebSocket Hook
+ * @returns 连接状态、消息列表、发送方法
+ */
 export function useAgent() {
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimerRef = useRef<number | null>(null)
@@ -59,12 +75,13 @@ export function useAgent() {
   const messages = useChatStore((s) => s.messages)
   const add = useChatStore((s) => s.add)
 
+  /** 建立 WebSocket 连接 */
   const connect = useCallback(() => {
     const ws = new WebSocket(WS_URL)
     wsRef.current = ws
     ws.onopen = () => {
       setConnected(true)
-      ws.send(JSON.stringify({ type: 'resync' }))
+      ws.send(JSON.stringify({ type: 'resync' })) // 请求同步历史消息
     }
     ws.onmessage = (e) => {
       try {
@@ -85,6 +102,7 @@ export function useAgent() {
     }
   }, [add])
 
+  // 组件挂载时连接，卸载时清理
   useEffect(() => {
     connect()
     return () => {
@@ -96,6 +114,7 @@ export function useAgent() {
     }
   }, [connect])
 
+  /** 发送消息到后端 */
   const send = useCallback((msg: object) => {
     const ws = wsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -105,6 +124,7 @@ export function useAgent() {
     }
   }, [])
 
+  /** 发送邮件处理意图 */
   const sendIntent = useCallback(
     (threadId: string, intent: 'reply' | 'archive' | 'skip') => {
       send({ type: 'decision_intent', thread_id: threadId, intent })
@@ -112,6 +132,7 @@ export function useAgent() {
     [send],
   )
 
+  /** 发送草稿决定 */
   const sendDraftDecision = useCallback(
     (
       threadId: string,
@@ -123,6 +144,7 @@ export function useAgent() {
     [send],
   )
 
+  /** 发送用户聊天消息 */
   const sendUserSay = useCallback(
     (text: string) => {
       send({ type: 'user_say', text })

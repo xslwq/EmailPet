@@ -12,15 +12,27 @@ logger = logging.getLogger(__name__)
 
 
 class EmbeddingError(Exception):
-    """Embedding API request failed."""
+    """Embedding API 请求失败。"""
 
 
 class EmbeddingClient:
+    """OpenAI 兼容的 embedding 客户端，用于生成文本向量。"""
     def __init__(self, base_url: str, api_key: str, model: str) -> None:
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model = model
 
     async def embed(self, text: str) -> list[float]:
+        """生成文本的 embedding 向量。
+
+        Args:
+            text: 输入文本
+
+        Returns:
+            embedding 向量列表
+
+        Raises:
+            EmbeddingError: API 请求失败
+        """
         try:
             response = await self.client.embeddings.create(
                 model=self.model,

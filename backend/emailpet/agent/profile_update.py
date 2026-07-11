@@ -41,6 +41,17 @@ async def profile_update_node(
     profile_store: UserProfileStore,
     push_callback: PushCallback,
 ) -> dict[str, Any]:
+    """通过 LLM 对比原始草稿和用户反馈，提取用户风格偏好并更新画像。
+
+    Args:
+        state: 当前 agent state
+        llm: LLM 客户端
+        profile_store: 用户画像存储
+        push_callback: WebSocket 推送回调
+
+    Returns:
+        更新后的 state 字段：original_draft（清空，避免重复处理）
+    """
     original_draft = state.get("original_draft")
     if original_draft is None:
         return {}
@@ -61,5 +72,6 @@ async def profile_update_node(
     if not isinstance(data, dict):
         logger.warning("profile_update non-dict response: %r", data)
         return {"original_draft": None}
+    # 合并新提取的画像数据到现有画像
     profile_store.merge(data)
     return {"original_draft": None}

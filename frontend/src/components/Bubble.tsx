@@ -1,6 +1,11 @@
+/**
+ * 消息气泡组件
+ * 职责：根据消息类型渲染不同的气泡样式（summary/draft/sent/agent_say/error）
+ */
 import { useState } from 'react'
 import type { ChatMessage } from '../store/chat'
 
+/** Bubble 组件属性 */
 interface BubbleProps {
   message: ChatMessage
   onFullText: (email: any) => void
@@ -64,6 +69,14 @@ const styles = {
   } as React.CSSProperties,
 }
 
+/**
+ * 消息气泡主组件
+ * 根据消息类型分发到不同的子组件渲染
+ * @param message - 聊天消息
+ * @param onFullText - 查看邮件全文回调
+ * @param onIntent - 邮件处理意图回调
+ * @param onDraftDecision - 草稿决定回调
+ */
 export function Bubble({ message, onFullText, onIntent, onDraftDecision }: BubbleProps) {
   const p = message.payload
   switch (p.kind) {
@@ -88,6 +101,13 @@ export function Bubble({ message, onFullText, onIntent, onDraftDecision }: Bubbl
   }
 }
 
+/**
+ * 邮件摘要气泡组件
+ * 显示邮件摘要和操作按钮（看全文/写回复/归档/跳过）
+ * @param payload - 摘要消息数据
+ * @param onFullText - 查看全文回调
+ * @param onIntent - 操作意图回调
+ */
 function SummaryBubble({
   payload,
   onFullText,
@@ -125,6 +145,12 @@ function SummaryBubble({
   )
 }
 
+/**
+ * 草稿气泡组件
+ * 显示 AI 生成的回复草稿，支持同意/修改/拒绝操作
+ * @param payload - 草稿消息数据
+ * @param onDecision - 决定回调
+ */
 function DraftBubble({
   payload,
   onDecision,

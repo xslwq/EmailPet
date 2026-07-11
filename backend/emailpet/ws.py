@@ -19,37 +19,48 @@ AgentResume = Callable[[dict, dict], Awaitable[Any]]
 AgentUpdate = Callable[[dict, dict], Awaitable[Any]]
 
 
+# 离线消息缓冲队列最大长度：超过则丢弃旧消息
 PENDING_QUEUE_MAX = 50
 
 
 class ConnectionManager:
-    """Manage the (single) active WebSocket and route messages.
+    """WebSocket 连接管理器（单连接设计）+ 消息路由。
 
-    Push-side: nodes call `push(event_type, payload)`. If a client is
-    connected, sends immediately; otherwise buffers up to PENDING_QUEUE_MAX
-    events for delivery on reconnect (via `resync`).
+    发送端：Agent 节点调用 `push(event_type, payload)`。若客户端已连接则立即发送；
+           否则缓冲最多 PENDING_QUEUE_MAX 条消息，等待重连后通过 `resync` 投递。
 
-    Receive-side: `process_message(msg, agent)` dispatches by `type` field.
+    接收端：`process_message(msg, agent)` 根据 `type` 字段路由到对应处理器。
+
+    设计约束：同时只允许一个前端连接，新连接会踢掉旧连接。
     """
 
     def __init__(self) -> None:
-        self._ws: Optional[WebSocket] = None
-        self._pending: deque[dict[str, Any]] = deque(maxlen=PENDING_QUEUE_MAX)
-        self._lock = asyncio.Lock()
+        self._ws: Optional[WebSocket] = None                     # 当前活动连接
+        self._pending: deque[dict[str, Any]] = deque(maxlen=PENDING_QUEUE_MAX)  # 离线消息缓冲
+        self._lock = asyncio.Lock()                              # 保护连接状态的锁
 
     @property
     def connected(self) -> bool:
+        """是否有活跃的 WebSocket 连接。"""
         return self._ws is not None
 
     async def attach(self, ws: WebSocket) -> None:
+        """绑定新的 WebSocket 连接（单连接：会替换旧连接）。"""
         async with self._lock:
             self._ws = ws
 
     async def detach(self) -> None:
+        """解绑当前 WebSocket 连接。"""
         async with self._lock:
             self._ws = None
 
     async def push(self, event_type: str, payload: dict[str, Any]) -> None:
+        """推送事件到前端，离线时缓冲。
+
+        参数：
+            event_type: 事件类型标识
+            payload: 事件数据字典
+        """
         message = {"type": event_type, **payload}
         if self._ws is not None:
             try:
@@ -58,11 +69,14 @@ class ConnectionManager:
             except Exception as e:  # noqa: BLE001
                 logger.warning("send_json failed, buffering: %s", e)
                 await self.detach()
-        # buffer for later
+        # 发送失败或离线时，加入缓冲队列等待重连
         self._pending.append(message)
 
     async def flush_pending(self) -> None:
-        """Send all buffered events to the current connection (used on resync)."""
+        """将所有缓冲的离线消息发送给当前连接（重连时调用）。
+
+        若发送中途失败，将剩余消息放回缓冲队列并断开连接。
+        """
         if self._ws is None:
             return
         while self._pending:
@@ -80,7 +94,12 @@ class ConnectionManager:
         msg: dict[str, Any],
         agent: Any,
     ) -> None:
-        """Dispatch an incoming client message."""
+        """处理前端发来的消息，根据 type 字段路由。
+
+        参数：
+            msg: 消息字典，必须包含 type 字段
+            agent: LangGraph Agent 实例，用于恢复执行
+        """
         msg_type = msg.get("type")
         if msg_type == "decision_intent":
             await self._handle_decision_intent(msg, agent)
@@ -97,16 +116,34 @@ class ConnectionManager:
             logger.warning("unknown ws message type: %r", msg_type)
 
     async def _handle_decision_intent(self, msg: dict, agent: Any) -> None:
+        """处理 intent 决策（在意图中断点 resume）。
+
+        区别：在用户选择"回复/归档/跳过"时调用，更新 current_intent 后继续执行。
+
+        参数：
+            msg: 包含 thread_id 和 intent 的消息
+            agent: LangGraph Agent 实例
+        """
         thread_id = msg.get("thread_id")
         intent = msg.get("intent")
         if not thread_id or intent not in ("reply", "archive", "skip"):
             await self.push("error", {"code": "bad_decision_intent", "message": str(msg)})
             return
         config = {"configurable": {"thread_id": thread_id}}
+        # 先更新状态，注入用户意图
         await agent.aupdate_state(config, {"current_intent": intent})
+        # 再从断点继续执行 Agent
         await agent.ainvoke(None, config)
 
     async def _handle_decision_draft(self, msg: dict, agent: Any) -> None:
+        """处理草稿决策（在草稿中断点 resume）。
+
+        区别：在用户选择"批准/修改/拒绝"草稿回复时调用，可附带修改意见。
+
+        参数：
+            msg: 包含 thread_id、decision 和可选 feedback 的消息
+            agent: LangGraph Agent 实例
+        """
         thread_id = msg.get("thread_id")
         decision = msg.get("decision")
         feedback = msg.get("feedback")
@@ -114,18 +151,26 @@ class ConnectionManager:
             await self.push("error", {"code": "bad_decision_draft", "message": str(msg)})
             return
         update: dict[str, Any] = {"draft_decision": decision}
+        # 修改时需要传入用户反馈
         if decision == "modify" and feedback:
             update["user_feedback"] = feedback
         config = {"configurable": {"thread_id": thread_id}}
+        # 先更新状态，注入用户决策
         await agent.aupdate_state(config, update)
+        # 再从断点继续执行 Agent
         await agent.ainvoke(None, config)
 
 
 def make_app(manager: ConnectionManager, agent_provider: Callable[[], Any]) -> FastAPI:
-    """Build a FastAPI app with the /ws endpoint wired to the given manager.
+    """构建带 /ws 端点的 FastAPI 应用。
 
-    `agent_provider` is a callable returning the compiled agent — accepts late binding
-    so main.py can hand over a not-yet-built agent at startup time.
+    参数：
+        manager: ConnectionManager 实例
+        agent_provider: 延迟绑定的 Agent 工厂函数，
+                       让 main.py 可以在启动阶段传入尚未构建完成的 Agent
+
+    返回：
+        配置好 WebSocket 端点的 FastAPI 应用
     """
     app = FastAPI()
 
@@ -133,7 +178,7 @@ def make_app(manager: ConnectionManager, agent_provider: Callable[[], Any]) -> F
     async def ws_endpoint(ws: WebSocket) -> None:
         await ws.accept()
         await manager.attach(ws)
-        # On connect, immediately flush any buffered events.
+        # 连接建立后立即投递离线缓冲消息
         await manager.flush_pending()
         try:
             while True:
