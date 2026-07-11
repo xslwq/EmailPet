@@ -68,8 +68,10 @@ class AppContext:
         self.email_vec_store: Optional[EmailVecStore] = None    # 邮件向量索引存储
         self.embedding_client: Optional[EmbeddingClient] = None # 嵌入模型客户端（可选，None 时降级）
         self.manager: Optional[ConnectionManager] = None        # WebSocket 连接管理器
-        self.agent = None                                       # LangGraph Agent 实例
-        self.saver_cm = None                                    # Checkpoint saver 上下文管理器
+        self.agent = None                                       # LangGraph Agent 实例（邮件处理）
+        self.saver_cm = None                                    # Checkpoint saver 上下文管理器（邮件处理）
+        self.free_chat_agent = None                             # LangGraph Agent 实例（自由对话）
+        self.free_chat_saver_cm = None                          # Checkpoint saver 上下文管理器（自由对话）
         self.poll_task: Optional[asyncio.Task] = None           # 邮件轮询后台任务
 
 
@@ -166,17 +168,19 @@ async def lifespan(app: FastAPI):
     """FastAPI 生命周期钩子：启动时构建组件，关闭时按逆序清理。
 
     启动顺序：
-    1. 构建 LangGraph Agent（带 Sqlite checkpoint）
-    2. 启动邮件轮询后台任务
+    1. 构建邮件处理 LangGraph Agent（带 Sqlite checkpoint）
+    2. 若 embedding 配置存在，构建自由对话 LangGraph Agent（共享 checkpoint.db）
+    3. 启动邮件轮询后台任务
 
     关闭顺序：
     1. 取消轮询任务
     2. 关闭 IMAP/SMTP 连接
-    3. 清理 checkpoint saver
+    3. 清理 checkpoint saver（邮件处理）
+    4. 清理 checkpoint saver（自由对话，若存在）
     """
     ctx: AppContext = app.state.ctx
     assert ctx.manager and ctx.llm and ctx.tools and ctx.archive_log
-    # 构建 Agent（带 sqlite checkpointer），传入所有必要的依赖
+    # 构建邮件处理 Agent（带 sqlite checkpointer），传入所有必要的依赖
     ctx.agent, ctx.saver_cm = await build_agent(
         llm=ctx.llm,
         tools=ctx.tools,
@@ -188,6 +192,18 @@ async def lifespan(app: FastAPI):
         email_vec_store=ctx.email_vec_store,
         embedding_client=ctx.embedding_client,
     )
+    # 构建自由对话 Agent（仅当 embedding 配置存在时）
+    if ctx.embedding_client is not None:
+        from emailpet.agent.free_chat_graph import build_free_chat_agent
+        ctx.free_chat_agent, ctx.free_chat_saver_cm = await build_free_chat_agent(
+            llm=ctx.llm,
+            embedding_client=ctx.embedding_client,
+            email_vec_store=ctx.email_vec_store,
+            emails_store=ctx.emails_store,
+            user_profile_store=ctx.profile_store,
+            push_callback=ctx.manager.push,
+            checkpoint_path=CHECKPOINT_DB,
+        )
     # 后台启动邮件轮询任务
     ctx.poll_task = asyncio.create_task(poll_loop(ctx))
     logger.info(
@@ -219,6 +235,11 @@ async def lifespan(app: FastAPI):
                 await ctx.saver_cm.__aexit__(None, None, None)
             except Exception as e:  # noqa: BLE001
                 logger.warning("saver cleanup failed: %s", e)
+        if ctx.free_chat_saver_cm is not None:
+            try:
+                await ctx.free_chat_saver_cm.__aexit__(None, None, None)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("free_chat saver cleanup failed: %s", e)
         logger.info("EmailPet backend stopped")
 
 
@@ -232,7 +253,11 @@ def create_app(config_path: Path = DEFAULT_CONFIG_PATH) -> FastAPI:
         已配置好的 FastAPI 应用实例
     """
     ctx = _build_context(config_path)
-    app = make_app(ctx.manager, lambda: ctx.agent)
+    app = make_app(
+        ctx.manager,
+        lambda: ctx.agent,
+        lambda: ctx.free_chat_agent,
+    )
     app.state.ctx = ctx
     app.router.lifespan_context = lifespan
     return app

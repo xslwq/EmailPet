@@ -93,12 +93,14 @@ class ConnectionManager:
         self,
         msg: dict[str, Any],
         agent: Any,
+        free_chat_agent: Any,
     ) -> None:
         """处理前端发来的消息，根据 type 字段路由。
 
         参数：
             msg: 消息字典，必须包含 type 字段
-            agent: LangGraph Agent 实例，用于恢复执行
+            agent: LangGraph Agent 实例（邮件处理），用于恢复执行
+            free_chat_agent: LangGraph Agent 实例（自由对话）
         """
         msg_type = msg.get("type")
         if msg_type == "decision_intent":
@@ -107,13 +109,37 @@ class ConnectionManager:
             await self._handle_decision_draft(msg, agent)
         elif msg_type == "user_say":
             text = msg.get("text", "")
-            await self.push("agent_say", {"text": f"我听到你说：{text}"})
+            await self._handle_user_say(text, free_chat_agent)
         elif msg_type == "resync":
             await self.flush_pending()
         elif msg_type == "ping":
             return
         else:
             logger.warning("unknown ws message type: %r", msg_type)
+
+    async def _handle_user_say(self, text: str, free_chat_agent: Any) -> None:
+        """路由 user_say 到 free_chat agent。
+
+        首次：ainvoke({"messages":[user_msg]}, config)
+        后续：aupdate_state({"messages":[user_msg]}, config) + ainvoke(None, config) resume
+
+        参数：
+            text: 用户输入文本
+            free_chat_agent: free_chat LangGraph Agent 实例
+        """
+        if free_chat_agent is None:
+            # embedding 未配置，free_chat 不可用
+            await self.push("agent_say", {"text": "（未配置 embedding，自由对话不可用）"})
+            return
+        config = {"configurable": {"thread_id": "chat_default"}}
+        new_msg = {"role": "user", "content": text}
+        try:
+            # 尝试后续：thread 已存在，update + resume
+            await free_chat_agent.aupdate_state(config, {"messages": [new_msg]})
+            await free_chat_agent.ainvoke(None, config)
+        except Exception:
+            # 首次：thread 不存在，ainvoke(initial_state)
+            await free_chat_agent.ainvoke({"messages": [new_msg]}, config)
 
     async def _handle_decision_intent(self, msg: dict, agent: Any) -> None:
         """处理 intent 决策（在意图中断点 resume）。
@@ -161,13 +187,18 @@ class ConnectionManager:
         await agent.ainvoke(None, config)
 
 
-def make_app(manager: ConnectionManager, agent_provider: Callable[[], Any]) -> FastAPI:
+def make_app(
+    manager: ConnectionManager,
+    agent_provider: Callable[[], Any],
+    free_chat_agent_provider: Callable[[], Any],
+) -> FastAPI:
     """构建带 /ws 端点的 FastAPI 应用。
 
     参数：
         manager: ConnectionManager 实例
-        agent_provider: 延迟绑定的 Agent 工厂函数，
+        agent_provider: 延迟绑定的 Agent 工厂函数（邮件处理），
                        让 main.py 可以在启动阶段传入尚未构建完成的 Agent
+        free_chat_agent_provider: 延迟绑定的 Agent 工厂函数（自由对话）
 
     返回：
         配置好 WebSocket 端点的 FastAPI 应用
@@ -184,7 +215,8 @@ def make_app(manager: ConnectionManager, agent_provider: Callable[[], Any]) -> F
             while True:
                 msg = await ws.receive_json()
                 agent = agent_provider()
-                await manager.process_message(msg, agent)
+                free_chat_agent = free_chat_agent_provider()
+                await manager.process_message(msg, agent, free_chat_agent)
         except WebSocketDisconnect:
             pass
         except Exception as e:  # noqa: BLE001

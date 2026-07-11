@@ -24,6 +24,14 @@ def fake_agent():
     return a
 
 
+@pytest.fixture
+def fake_free_chat_agent():
+    a = MagicMock()
+    a.aupdate_state = AsyncMock()
+    a.ainvoke = AsyncMock()
+    return a
+
+
 # --------- push / buffering ---------
 
 
@@ -70,10 +78,11 @@ async def test_send_failure_buffers_message(manager, fake_ws):
 # --------- process_message dispatch ---------
 
 
-async def test_process_decision_intent_resumes_agent(manager, fake_agent):
+async def test_process_decision_intent_resumes_agent(manager, fake_agent, fake_free_chat_agent):
     await manager.process_message(
         {"type": "decision_intent", "thread_id": "email_42", "intent": "reply"},
         fake_agent,
+        fake_free_chat_agent,
     )
     fake_agent.aupdate_state.assert_awaited_once_with(
         {"configurable": {"thread_id": "email_42"}},
@@ -82,11 +91,12 @@ async def test_process_decision_intent_resumes_agent(manager, fake_agent):
     fake_agent.ainvoke.assert_awaited_once()
 
 
-async def test_process_decision_intent_invalid_pushes_error(manager, fake_ws, fake_agent):
+async def test_process_decision_intent_invalid_pushes_error(manager, fake_ws, fake_agent, fake_free_chat_agent):
     await manager.attach(fake_ws)
     await manager.process_message(
         {"type": "decision_intent", "thread_id": "x", "intent": "bogus"},
         fake_agent,
+        fake_free_chat_agent,
     )
     # error pushed, agent not called
     fake_agent.aupdate_state.assert_not_awaited()
@@ -94,10 +104,11 @@ async def test_process_decision_intent_invalid_pushes_error(manager, fake_ws, fa
     assert args["type"] == "error"
 
 
-async def test_process_decision_draft_approve(manager, fake_agent):
+async def test_process_decision_draft_approve(manager, fake_agent, fake_free_chat_agent):
     await manager.process_message(
         {"type": "decision_draft", "thread_id": "email_42", "decision": "approve"},
         fake_agent,
+        fake_free_chat_agent,
     )
     fake_agent.aupdate_state.assert_awaited_once_with(
         {"configurable": {"thread_id": "email_42"}},
@@ -105,7 +116,7 @@ async def test_process_decision_draft_approve(manager, fake_agent):
     )
 
 
-async def test_process_decision_draft_modify_includes_feedback(manager, fake_agent):
+async def test_process_decision_draft_modify_includes_feedback(manager, fake_agent, fake_free_chat_agent):
     await manager.process_message(
         {
             "type": "decision_draft",
@@ -114,37 +125,56 @@ async def test_process_decision_draft_modify_includes_feedback(manager, fake_age
             "feedback": "shorter",
         },
         fake_agent,
+        fake_free_chat_agent,
     )
     args, _ = fake_agent.aupdate_state.await_args
     assert args[1] == {"draft_decision": "modify", "user_feedback": "shorter"}
 
 
-async def test_process_user_say_echoes(manager, fake_ws, fake_agent):
+async def test_process_user_say_routes_to_free_chat_first_time(manager, fake_ws, fake_agent, fake_free_chat_agent):
     await manager.attach(fake_ws)
-    await manager.process_message({"type": "user_say", "text": "hi"}, fake_agent)
+    # 首次调用：aupdate_state 抛出异常 → ainvoke 被调用
+    fake_free_chat_agent.aupdate_state.side_effect = RuntimeError("thread not found")
+    await manager.process_message({"type": "user_say", "text": "hi"}, fake_agent, fake_free_chat_agent)
+    fake_free_chat_agent.aupdate_state.assert_awaited_once()
+    fake_free_chat_agent.ainvoke.assert_awaited_once()
+
+
+async def test_process_user_say_routes_to_free_chat_subsequent(manager, fake_ws, fake_agent, fake_free_chat_agent):
+    await manager.attach(fake_ws)
+    # 后续调用：aupdate_state 成功 → ainvoke(None) 被调用
+    await manager.process_message({"type": "user_say", "text": "hi again"}, fake_agent, fake_free_chat_agent)
+    fake_free_chat_agent.aupdate_state.assert_awaited_once()
+    fake_free_chat_agent.ainvoke.assert_awaited_once_with(None, {"configurable": {"thread_id": "chat_default"}})
+
+
+async def test_process_user_say_no_free_chat_agent_fallback(manager, fake_ws, fake_agent):
+    await manager.attach(fake_ws)
+    # free_chat_agent 为 None → 推送提示文本
+    await manager.process_message({"type": "user_say", "text": "hi"}, fake_agent, None)
     args = fake_ws.send_json.await_args.args[0]
     assert args["type"] == "agent_say"
-    assert "hi" in args["text"]
+    assert "未配置 embedding" in args["text"]
 
 
-async def test_process_resync_flushes_pending(manager, fake_ws, fake_agent):
+async def test_process_resync_flushes_pending(manager, fake_ws, fake_agent, fake_free_chat_agent):
     await manager.push("summary", {"q": 1})
     await manager.attach(fake_ws)
-    await manager.process_message({"type": "resync"}, fake_agent)
+    await manager.process_message({"type": "resync"}, fake_agent, fake_free_chat_agent)
     assert fake_ws.send_json.await_count == 1
     assert len(manager._pending) == 0
 
 
-async def test_process_ping_is_noop(manager, fake_ws, fake_agent):
+async def test_process_ping_is_noop(manager, fake_ws, fake_agent, fake_free_chat_agent):
     await manager.attach(fake_ws)
-    await manager.process_message({"type": "ping"}, fake_agent)
+    await manager.process_message({"type": "ping"}, fake_agent, fake_free_chat_agent)
     fake_ws.send_json.assert_not_awaited()
     fake_agent.aupdate_state.assert_not_awaited()
 
 
-async def test_process_unknown_type_logs_no_crash(manager, fake_agent):
+async def test_process_unknown_type_logs_no_crash(manager, fake_agent, fake_free_chat_agent):
     # Should not raise
-    await manager.process_message({"type": "weird_command"}, fake_agent)
+    await manager.process_message({"type": "weird_command"}, fake_agent, fake_free_chat_agent)
 
 
 # --------- attach/detach ---------
