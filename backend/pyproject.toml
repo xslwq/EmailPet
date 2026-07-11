@@ -1,6 +1,6 @@
 [project]
 name = "emailpet"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.12"
 dependencies = [
     "langgraph>=0.4.0",
@@ -13,7 +13,11 @@ dependencies = [
     "pyyaml>=6.0",
     "beautifulsoup4>=4.12",
     "sqlite-vec>=0.1.9",
+    "click>=8.1.0",
 ]
+
+[project.scripts]
+emailpet = "emailpet.cli:main"
 
 [project.optional-dependencies]
 dev = [
