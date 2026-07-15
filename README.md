@@ -124,21 +124,4 @@ summarize (LLM #1)
                           │
                           ▼
                          END
-```
 
-## 简历亮点
-
-- LangGraph 持久化 Agent + 双层 human-in-the-loop（`interrupt_before` × SqliteSaver checkpoint）
-- 进程崩溃可恢复（thread state 落 SQLite）
-- WebSocket 实时双向通信 + 断线 50 条事件缓冲 + 重连 resync
-- OpenAI 兼容协议 + 结构化 JSON 输出 + 1 次自纠错重试
-- IMAP UID 幂等去重 + tz-aware datetime + HTML→纯文本
-- Electron 无框透明置顶窗 + 拖拽 IPC + 后端子进程生命周期托管
-
-## V2 路线图
-
-- Agent 长期记忆（LangGraph `Store` 跨会话记用户偏好）
-- 多账户 + keychain 凭据加密
-- IMAP IDLE 推送替代轮询
-- 提醒事项（从邮件提取时间）
-- 自定义小人形象 + Lottie 动画
