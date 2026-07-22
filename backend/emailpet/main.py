@@ -26,6 +26,7 @@ from emailpet.storage.emails_store import EmailsStore
 from emailpet.storage.email_vec_store import EmailVecStore
 from emailpet.storage.uid_store import UIDStore
 from emailpet.storage.user_profile_store import UserProfileStore
+from emailpet.storage.token_usage_store import TokenUsageStore
 from emailpet.ws import ConnectionManager, make_app
 
 logging.basicConfig(
@@ -42,6 +43,7 @@ ARCHIVE_DB = STORAGE_DIR / "archives.db"
 PROFILE_DB = STORAGE_DIR / "profile.db"
 EMAILS_DB = STORAGE_DIR / "emails.db"
 VEC_DB = STORAGE_DIR / "vec.db"
+TOKEN_DB = STORAGE_DIR / "token_usage.db"
 # 硬编码 1536 维：OpenAI text-embedding-3-small/ada-002 标准维度，
 # 也是当前向量索引的预设维度，暂不支持动态配置
 EMBEDDING_DIM = 1536
@@ -67,6 +69,7 @@ class AppContext:
         self.emails_store: Optional[EmailsStore] = None         # 邮件内容存储
         self.email_vec_store: Optional[EmailVecStore] = None    # 邮件向量索引存储
         self.embedding_client: Optional[EmbeddingClient] = None # 嵌入模型客户端（可选，None 时降级）
+        self.token_store: Optional[TokenUsageStore] = None      # Token 用量统计存储
         self.manager: Optional[ConnectionManager] = None        # WebSocket 连接管理器
         self.agent = None                                       # LangGraph Agent 实例（邮件处理）
         self.saver_cm = None                                    # Checkpoint saver 上下文管理器（邮件处理）
@@ -86,6 +89,7 @@ def _build_context(config_path: Path) -> AppContext:
     """
     ctx = AppContext()
     ctx.config = Config.from_yaml(config_path)
+    ctx.token_store = TokenUsageStore(TOKEN_DB)
     ctx.imap = IMAPClient(
         ctx.config.imap.host, ctx.config.imap.port,
         ctx.config.imap.username, ctx.config.imap.password,
@@ -96,6 +100,7 @@ def _build_context(config_path: Path) -> AppContext:
     )
     ctx.llm = LLMClient(
         ctx.config.llm.base_url, ctx.config.llm.api_key, ctx.config.llm.model,
+        token_store=ctx.token_store,
     )
     ctx.tools = AgentTools(ctx.imap, ctx.smtp)
     ctx.archive_log = ArchiveLog(ARCHIVE_DB)
@@ -109,6 +114,7 @@ def _build_context(config_path: Path) -> AppContext:
             ctx.config.embedding.base_url,
             ctx.config.embedding.api_key,
             ctx.config.embedding.model,
+            token_store=ctx.token_store,
         )
     else:
         ctx.embedding_client = None
@@ -240,6 +246,11 @@ async def lifespan(app: FastAPI):
                 await ctx.free_chat_saver_cm.__aexit__(None, None, None)
             except Exception as e:  # noqa: BLE001
                 logger.warning("free_chat saver cleanup failed: %s", e)
+        if ctx.token_store is not None:
+            try:
+                ctx.token_store.close()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("token_store close failed: %s", e)
         logger.info("EmailPet backend stopped")
 
 

@@ -179,6 +179,32 @@ def status(config: str) -> None:
     click.echo(f"  轮询间隔：{cfg.poll_interval_seconds}s")
     click.echo(f"  WebSocket：{cfg.server.ws_host}:{cfg.server.ws_port}")
 
+    # Token 消耗
+    try:
+        from emailpet.storage.token_usage_store import TokenUsageStore
+        token_store = TokenUsageStore(storage / "token_usage.db")
+        summary = token_store.summary()
+        click.echo(f"\n💰 Token 消耗：")
+        if not summary:
+            click.echo(f"  (暂无 token 记录)")
+        else:
+            grand_total = 0
+            for call_type, stats in summary.items():
+                count = stats["count"]
+                total = stats["total_tokens"]
+                avg = stats["avg_tokens"]
+                chars = stats["input_chars"]
+                if total > 0:
+                    click.echo(f"  {call_type}: {count} 次, {total} tokens (avg {avg}/call)")
+                    grand_total += total
+                else:
+                    click.echo(f"  {call_type}: {count} 次, {chars} chars input")
+            if grand_total > 0:
+                click.echo(f"  总计: {grand_total} tokens")
+        token_store.close()
+    except Exception as e:
+        click.echo(f"\n💰 Token 消耗：(加载失败：{e})")
+
 
 @cli.command()
 def version() -> None:

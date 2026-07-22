@@ -115,13 +115,11 @@ async def llm_reply_node(
     messages_for_llm = [{"role": "system", "content": system_prompt}] + state.get("messages", [])
 
     try:
-        # 用 LLMClient 的底层 client 直接调用
-        completion = await llm.client.chat.completions.create(
-            model=llm.model,
-            messages=messages_for_llm,
+        reply = await llm.chat_completion(
+            messages_for_llm,
             temperature=0.5,
+            call_type="free_chat",
         )
-        reply = completion.choices[0].message.content or ""
     except Exception as e:  # noqa: BLE001
         logger.warning("llm_reply failed: %s", e)
         await push_callback("error", {"code": "chat_reply_failed", "message": str(e)})

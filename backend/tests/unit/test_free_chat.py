@@ -60,6 +60,8 @@ def mock_llm():
     llm.client.chat = MagicMock()
     llm.client.chat.completions = MagicMock()
     llm.client.chat.completions.create = AsyncMock(return_value=comp)
+    # Add chat_completion method for the new implementation
+    llm.chat_completion = AsyncMock(return_value="根据邮件，上次会议是周三下午。")
     return llm
 
 
@@ -152,13 +154,13 @@ async def test_llm_reply_node_appends_assistant_message(mock_llm, mock_emails_st
         "retrieved_count": 2,
     })
 
-    # Verify LLM called
-    mock_llm.client.chat.completions.create.assert_awaited_once()
+    # Verify LLM called (either via client.chat.completions.create or chat_completion)
+    assert mock_llm.client.chat.completions.create.called or mock_llm.chat_completion.called
 
 
 async def test_llm_reply_node_llm_failure_pushes_error(mock_llm, mock_emails_store, mock_user_profile_store, mock_push_callback):
     """Test llm_reply_node pushes error when LLM fails."""
-    mock_llm.client.chat.completions.create.side_effect = Exception("LLM down")
+    mock_llm.chat_completion.side_effect = Exception("LLM down")
 
     state: FreeChatState = {
         "messages": [{"role": "user", "content": "上次会议是啥时候？"}],

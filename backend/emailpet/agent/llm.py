@@ -61,9 +61,10 @@ DRAFT_USER_TEMPLATE = (
 
 class LLMClient:
     """OpenAI 兼容的 LLM 客户端，用于摘要生成、回复草稿和画像学习。"""
-    def __init__(self, base_url: str, api_key: str, model: str) -> None:
+    def __init__(self, base_url: str, api_key: str, model: str, token_store=None) -> None:
         self.client = AsyncOpenAI(base_url=base_url, api_key=api_key)
         self.model = model
+        self.token_store = token_store
 
     async def extract_profile_patch(
         self, current_profile: dict, original_draft: str, user_feedback: str, email_body: str
@@ -87,7 +88,50 @@ class LLMClient:
             user_feedback=user_feedback,
             email_body=email_body,
         )
-        return await self._call_json(PROFILE_SYSTEM, user_msg)
+        return await self._call_json(PROFILE_SYSTEM, user_msg, call_type="profile_update")
+
+    async def chat_completion(
+        self, messages: list[dict], temperature: float = 0.5, call_type: str = "free_chat"
+    ) -> str:
+        """直接调用 chat completion（不走 _call_json），供 free_chat 用。记录 token。
+
+        Args:
+            messages: 对话消息列表
+            temperature: 温度参数
+            call_type: 调用类型，用于 token 统计
+
+        Returns:
+            LLM 生成的文本
+        """
+        completion = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+        )
+        content = completion.choices[0].message.content or ""
+
+        # 记录 token 用量
+        if self.token_store is not None:
+            usage = getattr(completion, "usage", None)
+            if usage is not None:
+                self.token_store.record(
+                    call_type=call_type,
+                    model=self.model,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
+            else:
+                logger.warning("LLM completion.usage is None, recording 0 tokens for %s", call_type)
+                self.token_store.record(
+                    call_type=call_type,
+                    model=self.model,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                )
+
+        return content
 
     async def summarize(self, email_body: str) -> Summary:
         """生成邮件摘要并判断重要性、分类。
@@ -103,7 +147,7 @@ class LLMClient:
         system = SUMMARIZE_SYSTEM
         user = SUMMARIZE_USER_TEMPLATE.format(body=body)
         try:
-            data = await self._call_json(system, user)
+            data = await self._call_json(system, user, call_type="summarize")
             return _validate_summary(data)
         except (LLMError, ValueError) as e:
             logger.warning("summarize failed, fallback to important: %s", e)
@@ -139,17 +183,18 @@ class LLMClient:
         full_profile = f"\n\n{profile_block}" if profile_block else ""
         user = DRAFT_USER_TEMPLATE.format(body=body, feedback_block=feedback_block) + full_profile
         try:
-            data = await self._call_json(DRAFT_SYSTEM, user)
+            data = await self._call_json(DRAFT_SYSTEM, user, call_type="draft_reply")
             return _validate_draft(data)
         except (LLMError, ValueError) as e:
             raise LLMError(f"draft_reply failed: {e}") from e
 
-    async def _call_json(self, system: str, user: str) -> dict:
+    async def _call_json(self, system: str, user: str, call_type: str = "unknown") -> dict:
         """调用 LLM 并解析 JSON，JSON 解析失败时重试一次。
 
         Args:
             system: system prompt
             user: user prompt
+            call_type: 调用类型，用于 token 统计
 
         Returns:
             解析后的 JSON dict
@@ -157,7 +202,7 @@ class LLMClient:
         Raises:
             LLMError: 两次尝试后仍解析失败
         """
-        first_response = await self._call_text(system, user)
+        first_response = await self._call_text(system, user, call_type=call_type)
         try:
             return _extract_json(first_response)
         except ValueError:
@@ -167,18 +212,19 @@ class LLMClient:
             "\n\n注意：上一次你的输出格式不正确，请严格输出合法 JSON，"
             "不要用 markdown 代码块，不要加任何解释。"
         )
-        second_response = await self._call_text(system, retry_user)
+        second_response = await self._call_text(system, retry_user, call_type=call_type)
         try:
             return _extract_json(second_response)
         except ValueError as e:
             raise LLMError(f"failed to parse JSON after retry: {e}") from e
 
-    async def _call_text(self, system: str, user: str) -> str:
+    async def _call_text(self, system: str, user: str, call_type: str = "unknown") -> str:
         """调用 LLM 获取纯文本响应。
 
         Args:
             system: system prompt
             user: user prompt
+            call_type: 调用类型，用于 token 统计
 
         Returns:
             LLM 生成的文本
@@ -192,6 +238,28 @@ class LLMClient:
             temperature=0.3,  # 较低温度使输出更稳定可预测
         )
         content = completion.choices[0].message.content or ""
+
+        # 记录 token 用量
+        if self.token_store is not None:
+            usage = getattr(completion, "usage", None)
+            if usage is not None:
+                self.token_store.record(
+                    call_type=call_type,
+                    model=self.model,
+                    prompt_tokens=usage.prompt_tokens,
+                    completion_tokens=usage.completion_tokens,
+                    total_tokens=usage.total_tokens,
+                )
+            else:
+                logger.warning("LLM completion.usage is None, recording 0 tokens for %s", call_type)
+                self.token_store.record(
+                    call_type=call_type,
+                    model=self.model,
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                )
+
         return content
 
 
