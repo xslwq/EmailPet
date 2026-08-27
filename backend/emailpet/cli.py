@@ -2,8 +2,6 @@
 
 提供命令行界面，支持启动后端、终端对话、查看状态等子命令。
 不依赖 Electron 前端，纯终端可用。
-
-See docs/modules/backend/emailpet/cli.md for full module doc.
 """
 from __future__ import annotations
 

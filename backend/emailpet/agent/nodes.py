@@ -1,6 +1,4 @@
 """LangGraph node functions and conditional routers for the EmailPet agent.
-
-See docs/modules/backend/emailpet/agent/nodes.md for full module doc.
 """
 from __future__ import annotations
 

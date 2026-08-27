@@ -1,6 +1,4 @@
 """LangGraph state schema for the EmailPet agent.
-
-See docs/modules/backend/emailpet/agent/state.md for full module doc.
 """
 from __future__ import annotations
 

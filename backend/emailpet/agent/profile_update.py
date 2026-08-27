@@ -1,6 +1,4 @@
 """profile_update_node — LLM-driven user style profile learning.
-
-See docs/modules/backend/emailpet/agent/profile_update.md for full module doc.
 """
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
 """OpenAI-compatible LLM client for summarization and reply drafting.
-
-See docs/modules/backend/emailpet/agent/llm.md for full module doc.
 """
 from __future__ import annotations
 

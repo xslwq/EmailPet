@@ -1,6 +1,4 @@
 """SQLite-backed user profile store (style preferences).
-
-See docs/modules/backend/emailpet/storage/user_profile_store.md for full module doc.
 """
 from __future__ import annotations
 

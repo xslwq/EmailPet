@@ -1,6 +1,4 @@
 """EmailPet backend entry point — wires all components and runs the FastAPI server.
-
-See docs/modules/backend/emailpet/main.md for full module doc.
 """
 from __future__ import annotations
 

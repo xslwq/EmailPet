@@ -1,6 +1,4 @@
 """自由对话 LangGraph 组装。
-
-See docs/modules/backend/emailpet/agent/free_chat_graph.md for full module doc.
 """
 from __future__ import annotations
 

@@ -1,6 +1,4 @@
 """YAML config loading for EmailPet backend.
-
-See docs/modules/backend/emailpet/config.md for full module doc.
 """
 from __future__ import annotations
 

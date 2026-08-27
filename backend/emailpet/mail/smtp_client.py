@@ -1,6 +1,4 @@
 """SMTP client wrapping stdlib smtplib for async use.
-
-See docs/modules/backend/emailpet/mail/smtp_client.md for full module doc.
 """
 from __future__ import annotations
 

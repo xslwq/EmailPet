@@ -1,38 +1,27 @@
 # EmailPet Frontend
 
-Electron + React + TypeScript + Vite scaffolding for the EmailPet desktop pet UI.
+Electron + React + TypeScript 桌宠界面，通过 `ws://127.0.0.1:8765/ws` 与后端通信。
 
-## Install
+## 安装
 
 ```bash
-npm install
+cd frontend
+npm ci
 ```
 
-## Develop (renderer only, in browser)
+## 运行与构建
 
 ```bash
+# 仅启动 Vite renderer
 npm run dev
-```
 
-## Build (renderer)
-
-```bash
+# TypeScript 检查与 renderer 构建
 npm run build
+
+# 构建 renderer 并启动 Electron
+EMAILPET_NO_SPAWN=1 npm run electron:dev
 ```
 
-## Launch Electron app (dev)
+未设置 `EMAILPET_NO_SPAWN` 时，Electron 主进程会从 `backend/.venv` 启动后端；连续崩溃三次后停止重启并退出。
 
-```bash
-npm run electron:dev
-```
-
-This builds the renderer and launches Electron pointing at the built bundle.
-
-## Layout
-
-- `electron/` — Electron main + preload sources
-- `src/` — React renderer sources
-  - `components/` — UI components (added in Task 3-x)
-  - `hooks/` — React hooks (added in Task 3-x)
-  - `store/` — Zustand stores (added in Task 3-x)
-- `assets/pet/` — pet sprite assets
+当前 renderer 支持重要邮件摘要、全文、意图选择和草稿审批。已知的 `chat_reply` 事件缺口记录在[公共契约](../docs/contracts.md)。开发与清理流程见[开发与验证](../docs/development.md)。

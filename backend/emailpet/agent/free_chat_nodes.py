@@ -1,6 +1,4 @@
 """自由对话 graph 的节点函数。
-
-See docs/modules/backend/emailpet/agent/free_chat_nodes.md for full module doc.
 """
 from __future__ import annotations
 

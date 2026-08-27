@@ -1,6 +1,4 @@
 """WebSocket routing and connection management for EmailPet.
-
-See docs/modules/backend/emailpet/ws.md for full module doc.
 """
 from __future__ import annotations
 

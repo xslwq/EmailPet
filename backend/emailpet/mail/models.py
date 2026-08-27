@@ -1,6 +1,4 @@
 """Pure data containers for email and AI outputs.
-
-See docs/modules/backend/emailpet/mail/models.md for full module doc.
 """
 from __future__ import annotations
 

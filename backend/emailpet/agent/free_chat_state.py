@@ -1,6 +1,4 @@
 """自由对话 graph 的 state schema。
-
-See docs/modules/backend/emailpet/agent/free_chat_state.md for full module doc.
 """
 from __future__ import annotations
 

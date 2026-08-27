@@ -1,6 +1,4 @@
 """SQLite-backed store of processed IMAP UIDs.
-
-See docs/modules/backend/emailpet/storage/uid_store.md for full module doc.
 """
 from __future__ import annotations
 

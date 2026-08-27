@@ -1,6 +1,4 @@
 """Async IMAP client wrapper around aioimaplib.
-
-See docs/modules/backend/emailpet/mail/imap_client.md for full module doc.
 """
 from __future__ import annotations
 

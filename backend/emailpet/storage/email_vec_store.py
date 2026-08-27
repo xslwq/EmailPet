@@ -1,6 +1,4 @@
 """sqlite-vec backed vector index for email RAG.
-
-See docs/modules/backend/emailpet/storage/email_vec_store.md for full module doc.
 """
 from __future__ import annotations
 

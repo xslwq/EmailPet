@@ -1,6 +1,4 @@
 """SQLite-backed log of silently-archived emails.
-
-See docs/modules/backend/emailpet/storage/archive_log.md for full module doc.
 """
 from __future__ import annotations
 

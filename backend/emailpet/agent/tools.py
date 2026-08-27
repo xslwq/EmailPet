@@ -1,6 +1,4 @@
 """Agent tools — wrap IMAP/SMTP for use by LangGraph nodes.
-
-See docs/modules/backend/emailpet/agent/tools.md for full module doc.
 """
 from __future__ import annotations
 

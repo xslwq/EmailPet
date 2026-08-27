@@ -1,6 +1,4 @@
 """OpenAI-compatible embedding client.
-
-See docs/modules/backend/emailpet/agent/embedding.md for full module doc.
 """
 from __future__ import annotations
 

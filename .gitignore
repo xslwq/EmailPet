@@ -21,8 +21,8 @@ backend/emailpet/storage/*.db
 backend/emailpet/storage/*.db-shm
 backend/emailpet/storage/*.db-wal
 
-# Docs (本地详细说明文档，不入仓库)
-docs/
+# Local documentation drafts (正式事实文档必须入仓库)
+docs/.drafts/
 
 # OS / IDE
 .DS_Store

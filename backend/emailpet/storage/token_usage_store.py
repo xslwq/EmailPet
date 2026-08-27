@@ -1,6 +1,4 @@
 """SQLite-backed token usage tracking store.
-
-See docs/modules/backend/emailpet/storage/token_usage_store.md for full module doc.
 """
 from __future__ import annotations
 import sqlite3

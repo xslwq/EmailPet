@@ -1,6 +1,4 @@
 """SQLite-backed emails metadata + behavior store.
-
-See docs/modules/backend/emailpet/storage/emails_store.md for full module doc.
 """
 from __future__ import annotations
 

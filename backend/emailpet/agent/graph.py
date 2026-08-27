@@ -1,6 +1,4 @@
 """LangGraph StateGraph assembly for the EmailPet agent.
-
-See docs/modules/backend/emailpet/agent/graph.md for full module doc.
 """
 from __future__ import annotations
 
